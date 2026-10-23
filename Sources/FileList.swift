@@ -83,7 +83,8 @@ final class FileList: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTe
         table.doubleAction = #selector(doubleClicked)
         table.list = self
         table.registerForDraggedTypes([.fileURL])
-        table.setDraggingSourceOperationMask([.copy, .move], forLocal: false)
+        // Other apps (browsers, Mail, chat) ask for a copy or a link; offer every kind so any of them can take it.
+        table.setDraggingSourceOperationMask([.copy, .move, .link, .generic], forLocal: false)
         table.headerView?.menu = columnMenu()
         // The saved layout may come from a moment a search was showing; Folder belongs only to search results.
         table.tableColumn(withIdentifier: .init("folder"))?.isHidden = true
@@ -101,6 +102,10 @@ final class FileList: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTe
         grid.allowsMultipleSelection = true
         grid.list = self
         grid.backgroundColors = [.textBackgroundColor]
+        // Drag items out to other apps (a browser's upload box, Mail, the desktop) and drop files in.
+        grid.setDraggingSourceOperationMask([.copy, .move, .link, .generic], forLocal: false)
+        grid.setDraggingSourceOperationMask([.copy, .move], forLocal: true)
+        grid.registerForDraggedTypes([.fileURL])
 
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
@@ -414,8 +419,33 @@ final class FileList: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTe
     func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) { host?.selectionChanged() }
     func collectionView(_ collectionView: NSCollectionView, didDeselectItemsAt indexPaths: Set<IndexPath>) { host?.selectionChanged() }
 
+    func collectionView(_ collectionView: NSCollectionView, canDragItemsAt indexPaths: Set<IndexPath>, with event: NSEvent) -> Bool {
+        indexPaths.allSatisfy { rows.indices.contains($0.item) && rows[$0.item].item != nil }
+    }
+
     func collectionView(_ collectionView: NSCollectionView, pasteboardWriterForItemAt indexPath: IndexPath) -> NSPasteboardWriting? {
         rows[indexPath.item].item?.url as NSURL?
+    }
+
+    func collectionView(_ collectionView: NSCollectionView, validateDrop info: NSDraggingInfo,
+                        proposedIndexPath: AutoreleasingUnsafeMutablePointer<NSIndexPath>,
+                        dropOperation: UnsafeMutablePointer<NSCollectionView.DropOperation>) -> NSDragOperation {
+        // Onto a folder icon: into that folder. Anywhere else: into the folder being shown.
+        let index = proposedIndexPath.pointee.item
+        if dropOperation.pointee == .on, rows.indices.contains(index), rows[index].item?.isFolder == true { return dragOperation(info) }
+        if searching { return [] }
+        dropOperation.pointee = .before
+        return dragOperation(info)
+    }
+
+    func collectionView(_ collectionView: NSCollectionView, acceptDrop info: NSDraggingInfo, indexPath: IndexPath,
+                        dropOperation: NSCollectionView.DropOperation) -> Bool {
+        let urls = info.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        guard !urls.isEmpty else { return false }
+        let target = dropOperation == .on && rows.indices.contains(indexPath.item) && rows[indexPath.item].item?.isFolder == true
+            ? rows[indexPath.item].item?.url : nil
+        host?.drop(urls, into: target, copy: dragOperation(info) == .copy)
+        return true
     }
 }
 

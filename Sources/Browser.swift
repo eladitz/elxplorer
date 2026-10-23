@@ -526,6 +526,8 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
 
     func drop(_ urls: [URL], into target: URL?, copy: Bool) {
         guard let destination = target ?? folder else { return }
+        // Dragged out and dropped back where they already are: nothing to do.
+        if !copy, urls.allSatisfy({ $0.deletingLastPathComponent().canonicalPath == destination.canonicalPath }) { return }
         perform(copy ? "Copying" : "Moving", urls.count) { try FileOps.paste(urls, into: destination, move: !copy) }
     }
 
