@@ -76,7 +76,8 @@ final class FileList: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTe
         table.allowsColumnReordering = true
         table.usesAlternatingRowBackgroundColors = true
         table.style = .fullWidth
-        table.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle   // Name grows with the window, as in Explorer
+        // Columns are sized by fitColumns(): Name absorbs width changes, the others keep the widths you set.
+        table.columnAutoresizingStyle = .noColumnAutoresizing
         table.rowHeight = 22
         table.intercellSpacing = NSSize(width: 6, height: 2)
         table.target = self
@@ -108,6 +109,7 @@ final class FileList: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTe
         grid.registerForDraggedTypes([.fileURL])
 
         scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = true   // only appears when the list is narrower than its columns
         scroll.autohidesScrollers = true
         // Whenever the list gets wider or narrower (window resize, preview pane, sidebar), Name absorbs
         // the change so the other columns always stay in view.
@@ -172,7 +174,7 @@ final class FileList: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTe
         let available = scroll.contentView.bounds.width
         let spacing = table.intercellSpacing.width
         let others = table.tableColumns.filter { !$0.isHidden && $0 !== name }.reduce(0) { $0 + $1.width + spacing }
-        let target = min(name.maxWidth, max(100, available - others - spacing - 2))
+        let target = min(name.maxWidth, max(140, available - others - spacing - 2))
         if abs(name.width - target) > 0.5 { name.width = target }
     }
 

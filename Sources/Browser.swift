@@ -19,6 +19,7 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
     private var shownHidden = Settings.shared.showHidden
     private var pendingSelection: Set<URL> = []
     private var pendingRename: URL?
+    private var selectionOrder: [URL] = []    // oldest → newest selection
 
     private var query = SearchQuery()
     private var searchRun: SearchRun?
@@ -446,8 +447,10 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
     /// The pane shows when asked for (View ▸ Preview Pane), or by itself while a picture/video is selected.
     private func updatePreview() {
         let s = Settings.shared
-        let chosen = list.selectedItems
-        let wanted = s.showPreview || (s.autoPreviewMedia && chosen.count == 1 && chosen[0].isPreviewable)
+        // In the order they were selected, so the newest goes on top of the pile.
+        let byURL = Dictionary(list.selectedItems.map { ($0.url, $0) }, uniquingKeysWith: { a, _ in a })
+        let chosen = selectionOrder.compactMap { byURL[$0] }
+        let wanted = s.showPreview || (s.autoPreviewMedia && !chosen.isEmpty && chosen.contains(where: \.isPreviewable))
         if wanted && preview.isHidden {
             preview.isHidden = false
             layoutPanes()
@@ -517,6 +520,14 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
     }
 
     func selectionChanged() {
+        let current = list.selectedItems
+        let selected = Set(current.map(\.url))
+        selectionOrder.removeAll { !selected.contains($0) }
+        var known = Set(selectionOrder)
+        for item in current where !known.contains(item.url) {   // newly selected: on top
+            selectionOrder.append(item.url)
+            known.insert(item.url)
+        }
         updateStatus()
         updatePreview()
         if QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible { QLPreviewPanel.shared().reloadData() }

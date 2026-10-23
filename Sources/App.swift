@@ -29,6 +29,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let folder = i + 2 < args.count ? URL(fileURLWithPath: args[i + 2]) : FileManager.default.homeDirectoryForCurrentUser
             let browser = newWindow(folder)
             if i + 3 < args.count { browser.searchField.stringValue = args[i + 3]; browser.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: browser.searchField)) }
+            // ELX_SELECT="a.jpg,b.jpg": select these (in this order) before drawing.
+            if let names = ProcessInfo.processInfo.environment["ELX_SELECT"] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    for name in names.split(separator: ",") {
+                        browser.list.select(Set(browser.list.selectedItems.map(\.url) + [folder.appendingPathComponent(String(name))]))
+                        browser.selectionChanged()
+                    }
+                }
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
                 if ProcessInfo.processInfo.environment["ELX_DEBUG"] != nil, let split = browser.window?.contentView?.subviews.compactMap({ $0 as? NSSplitView }).first {
                     print("split", split.bounds.width, split.subviews.map { "\($0.isHidden ? "hidden " : "")\(Int($0.frame.minX))+\(Int($0.frame.width))" })

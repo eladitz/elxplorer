@@ -9,6 +9,7 @@ import PDFKit
 import SceneKit
 import SceneKit.ModelIO
 import ModelIO
+import QuickLookThumbnailing
 
 enum Details {
     /// Readable facts about a file from Spotlight's metadata: dimensions, duration, camera, pages, source…
@@ -53,6 +54,7 @@ final class PreviewPane: NSView {
     private let pdf = PDFView()
     private let textScroll = NSTextView.scrollableTextView()
     private let model = SCNView()
+    private let pile = PhotoPile()
     private var pictureJob = 0
     private let info = NSStackView()
     private var sizeJob: Thread?
@@ -80,7 +82,7 @@ final class PreviewPane: NSView {
         picture.imageScaling = .scaleProportionallyDown
         picture.animates = true   // GIFs play
         // An image view wants to be as big as its image; here it should just fit whatever room the pane has.
-        for v in [picture, preview, player, pdf, textScroll, model] as [NSView] {
+        for v in [picture, preview, player, pdf, textScroll, model, pile] as [NSView] {
             for axis in [NSLayoutConstraint.Orientation.horizontal, .vertical] {
                 v.setContentCompressionResistancePriority(.init(1), for: axis)
                 v.setContentHuggingPriority(.init(1), for: axis)
@@ -101,7 +103,7 @@ final class PreviewPane: NSView {
         model.allowsCameraControl = true            // drag to rotate, pinch/scroll to zoom
         model.autoenablesDefaultLighting = true
         model.backgroundColor = .clear
-        for v in [preview, picture, player, pdf, textScroll, model] as [NSView] {
+        for v in [preview, picture, player, pdf, textScroll, model, pile] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             stage.addSubview(v)
             NSLayoutConstraint.activate([v.topAnchor.constraint(equalTo: stage.topAnchor, constant: 8),
@@ -125,12 +127,12 @@ final class PreviewPane: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// `items` in the order they were selected; with several, the most recent ends up on top of the pile.
     func show(_ items: [FileItem]) {
         guard items.count == 1, let item = items.first else {
             shown = nil
             display(nil)
-            fill(items.isEmpty ? [] : [("Selected", "\(items.count) items"),
-                                       ("Size", Format.size(items.compactMap(\.size).reduce(0, +)))], title: nil)
+            if items.count > 1 { showPile(items) } else { fill([], title: nil) }
             return
         }
         guard item.url != shown else { return }
@@ -145,6 +147,16 @@ final class PreviewPane: NSView {
         rows += Details.facts(item.url)
         fill(rows, title: item.name)
         if item.isFolder { measure(item.url) }
+    }
+
+    private func showPile(_ items: [FileItem]) {
+        pile.isHidden = false
+        pile.show(items.suffix(7).map(\.url), total: items.count)
+        // "9 JPEG images, 2 QuickTime movies": what's in the selection, most common first.
+        let kinds = Dictionary(grouping: items, by: \.kind).map { ($0.key, $0.value.count) }.sorted { $0.1 > $1.1 }
+        let summary = kinds.prefix(4).map { "\($0.1) \($0.0)" }.joined(separator: "\n") + (kinds.count > 4 ? "\n…" : "")
+        let bytes = items.reduce(Int64(0)) { $0 + ($1.isFolder ? FolderSizes.shared.cached($1.url) ?? 0 : $1.size ?? 0) }
+        fill([("Selected", "\(items.count) items"), ("Size", Format.size(bytes)), ("Contains", summary)], title: nil)
     }
 
     private enum Viewer { case quickLook, picture, video, pdf, text, model }
@@ -169,6 +181,7 @@ final class PreviewPane: NSView {
         pdf.isHidden = viewer != .pdf
         textScroll.isHidden = viewer != .text
         model.isHidden = viewer != .model
+        pile.isHidden = true
         preview.previewItem = viewer == .quickLook ? item?.url as NSURL? : nil
         player.player = viewer == .video ? item.map { AVPlayer(url: $0.url) } : nil
         pdf.document = viewer == .pdf ? item.flatMap { PDFDocument(url: $0.url) } : nil
@@ -362,4 +375,106 @@ enum Properties {
 
 final class FlippedView: NSView {
     override var isFlipped: Bool { true }
+}
+
+/// Several selected items as a pile of cards: the newest selection on top, straight and in full view;
+/// earlier ones peek out beneath it, turned a little, like prints on a table.
+@MainActor
+final class PhotoPile: NSView {
+    private var urls: [URL] = []          // bottom → top
+    private var total = 0
+    private var images: [URL: CGImage] = [:]
+    private static let cache = NSCache<NSURL, CGImage>()
+    private let badge = CATextLayer()
+    private let angles: [CGFloat] = [0, -7, 5, -4, 8, -9, 3]       // by distance from the top card
+    private let offsets: [CGPoint] = [.zero, CGPoint(x: -14, y: 8), CGPoint(x: 16, y: -6), CGPoint(x: -8, y: -12),
+                                      CGPoint(x: 12, y: 12), CGPoint(x: -18, y: -2), CGPoint(x: 6, y: 16)]
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        badge.fontSize = 13
+        badge.font = NSFont.boldSystemFont(ofSize: 13)
+        badge.alignmentMode = .center
+        badge.foregroundColor = NSColor.white.cgColor
+        badge.backgroundColor = NSColor.controlAccentColor.cgColor
+        badge.cornerRadius = 11
+        badge.contentsScale = 2
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func show(_ urls: [URL], total: Int) {
+        self.urls = urls
+        self.total = total
+        images = images.filter { urls.contains($0.key) }
+        for url in urls where images[url] == nil {
+            if let cached = Self.cache.object(forKey: url as NSURL) { images[url] = cached } else { load(url) }
+        }
+        needsLayout = true
+    }
+
+    private func load(_ url: URL) {
+        let size = 700
+        DispatchQueue.global(qos: .userInitiated).async {
+            var image: CGImage?
+            if let source = CGImageSourceCreateWithURL(url as CFURL, nil) {
+                image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: size] as CFDictionary)
+            }
+            let deliver: @Sendable (CGImage?) -> Void = { image in
+                guard let image else { return }
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        Self.cache.setObject(image, forKey: url as NSURL)
+                        guard self.urls.contains(url) else { return }
+                        self.images[url] = image
+                        self.needsLayout = true
+                    }
+                }
+            }
+            if let image { deliver(image); return }
+            // Not a picture: Quick Look's thumbnail (a PDF's first page, a video's frame, a document's icon).
+            let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: size, height: size), scale: 1, representationTypes: .all)
+            QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { rep, _ in deliver(rep?.cgImage) }
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        layer?.sublayers?.forEach { $0.removeFromSuperlayer() }
+        let box = CGSize(width: bounds.width * 0.72, height: bounds.height * 0.72)
+        guard box.width > 20, box.height > 20 else { return }
+        for (i, url) in urls.enumerated() {
+            let depth = urls.count - 1 - i          // 0 for the top card
+            let image = images[url]
+            let aspect = image.map { CGFloat($0.width) / CGFloat(max($0.height, 1)) } ?? 1
+            let scale = min(box.width / aspect, box.height)
+            let size = CGSize(width: scale * aspect, height: scale)
+            let card = CALayer()
+            card.bounds = CGRect(origin: .zero, size: size)
+            let offset = offsets[min(depth, offsets.count - 1)]
+            card.position = CGPoint(x: bounds.midX + offset.x, y: bounds.midY + offset.y)
+            card.contents = image
+            card.contentsGravity = .resizeAspectFill
+            card.masksToBounds = false
+            card.backgroundColor = NSColor.secondarySystemFill.cgColor
+            card.borderColor = NSColor.white.cgColor
+            card.borderWidth = 4
+            card.cornerRadius = 3
+            card.shadowColor = NSColor.black.cgColor
+            card.shadowOpacity = 0.35
+            card.shadowRadius = 6
+            card.shadowOffset = CGSize(width: 0, height: -2)
+            card.setAffineTransform(CGAffineTransform(rotationAngle: angles[min(depth, angles.count - 1)] * .pi / 180))
+            layer?.addSublayer(card)
+        }
+        if total > 1 {
+            badge.string = "\(total)"
+            let width = max(22, CGFloat("\(total)".count) * 9 + 12)
+            badge.frame = CGRect(x: bounds.maxX - width - 12, y: bounds.maxY - 34, width: width, height: 22)
+            layer?.addSublayer(badge)
+        }
+    }
 }
