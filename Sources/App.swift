@@ -50,6 +50,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
+        Donation.usageLine = { "You've used it on \($0) different days so far." }
+        Donation.start()
+        Updater.start()
         guard !launchedWithFiles else { return }
         // Bring back the tabs from last time; otherwise start at home.
         let session = Settings.shared.lastSession.filter { FileManager.default.fileExists(atPath: $0.path) }
@@ -58,6 +61,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         first.window?.makeKeyAndOrderFront(nil)
         FullDiskAccess.offerIfNeeded()
     }
+
+    // A "use" is a day Elxplorer was in front.
+    func applicationDidBecomeActive(_ notification: Notification) { Donation.recordDay() }
 
     func applicationWillTerminate(_ notification: Notification) {
         // Tabs in on-screen order, so they come back the same way.
@@ -152,7 +158,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func website(_ sender: Any?) { NSWorkspace.shared.open(URL(string: "https://ai.itzkin.com/elxplorer.html")!) }
     @objc func grantAccess(_ sender: Any?) { FullDiskAccess.ask(fromMenu: true) }
-    @objc func donate(_ sender: Any?) { NSWorkspace.shared.open(URL(string: "https://ko-fi.com/eladitzkin")!) }
+    @objc func donate(_ sender: Any?) { NSWorkspace.shared.open(Donation.page) }
+    @objc func checkForUpdates(_ sender: Any?) { Task { await Updater.check(manual: true) } }
 
     @objc func restoreFinder(_ sender: Any?) {
         LSSetDefaultRoleHandlerForContentType("public.folder" as CFString, .viewer, "com.apple.finder" as CFString)
@@ -201,7 +208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item("Restore Finder as Default", #selector(restoreFinder(_:)), target: self),
             nil,
             item("Elxplorer Website", #selector(website(_:)), target: self),
-            item("Check for Updates…", #selector(website(_:)), target: self),
+            item("Check for Updates…", #selector(checkForUpdates(_:)), target: self),
             item("Support Elxplorer on Ko-fi…", #selector(donate(_:)), target: self),
             item("Grant Full Disk Access…", #selector(grantAccess(_:)), target: self),
             nil,

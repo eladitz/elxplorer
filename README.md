@@ -95,6 +95,8 @@ Needs only the Xcode Command Line Tools (`xcode-select --install`).
 
 ## Support
 
-Elxplorer is free and made by one person. If it makes your Mac nicer to use, a coffee on **[Ko-fi](https://ko-fi.com/eladitzkin)** keeps it going.
+Elxplorer is free and made by one person. If it makes your Mac nicer to use, a coffee on **[Ko-fi](https://ko-fi.com/eladitzkin)** keeps it going. After a few days of use it asks once a month whether you like it, and stops for a year if you've donated (in Elconvo too).
+
+Once a day Elxplorer checks GitHub for a newer release and offers to download it (or use **Elxplorer ▸ Check for Updates…**).
 
 Made by Elad Itzkin · [ai.itzkin.com](https://ai.itzkin.com) · [elad.itzkin.com](https://elad.itzkin.com). MIT licensed.
