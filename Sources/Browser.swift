@@ -656,9 +656,20 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
         NSAppleScript(source: "tell application \"Finder\"\nreveal {\(list)}\nactivate\nend tell")?.executeAndReturnError(nil)
     }
 
-    @objc func convertWithElconvo(_ sender: Any?) {
-        guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.itzkin.elconvo") else { return }
-        NSWorkspace.shared.open(selection, withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+    @objc func elconvoConvert(_ sender: NSMenuItem) {
+        if let id = sender.representedObject as? String { Elconvo.convert(selection, to: id) }
+    }
+
+    @objc func elconvoTool(_ sender: NSMenuItem) {
+        if let id = sender.representedObject as? String { Elconvo.tool(selection, id) }
+    }
+
+    /// ⌥-right-click: Elconvo's wheel at the pointer instead of the menu (hold ⌥ again to open it on tools).
+    func elconvoWheel() -> Bool {
+        let urls = list.selectedItems.map(\.url)
+        guard Elconvo.isInstalled, !urls.isEmpty else { return false }
+        Elconvo.wheel(urls, at: NSEvent.mouseLocation, tools: NSEvent.modifierFlags.contains(.shift))
+        return true
     }
 
     @objc func openWithApp(_ sender: NSMenuItem) {
@@ -808,8 +819,21 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
         _ = add("Delete", #selector(moveToTrash(_:)), key: "\u{8}")
         menu.addItem(.separator())
         _ = add("Compress to ZIP", #selector(compress(_:)))
-        if NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.itzkin.elconvo") != nil, chosen.contains(where: { !$0.isFolder }) {
-            _ = add("Convert with Elconvo", #selector(convertWithElconvo(_:)))
+        if Elconvo.isInstalled {
+            let (formats, tools) = Elconvo.actions(for: chosen.map(\.url))
+            func elconvoMenu(_ title: String, _ actions: [ElconvoAction], _ selector: Selector) {
+                guard !actions.isEmpty else { return }
+                let parent = menu.addItem(withTitle: title, action: nil, keyEquivalent: "")
+                let sub = NSMenu()
+                for a in actions {
+                    let i = sub.addItem(withTitle: a.title, action: selector, keyEquivalent: "")
+                    i.target = self
+                    i.representedObject = a.id
+                }
+                parent.submenu = sub
+            }
+            elconvoMenu("Convert with Elconvo", formats, #selector(elconvoConvert(_:)))
+            elconvoMenu("Elconvo Tools", tools, #selector(elconvoTool(_:)))
         }
         if chosen.count == 1, chosen[0].isFolder {
             _ = add("Pin to Quick access", #selector(pinFolder(_:)))

@@ -22,6 +22,7 @@ protocol FileListHost: AnyObject {
     func drop(_ urls: [URL], into folder: URL?, copy: Bool)
     func sortChanged()
     func togglePreviewPanel()
+    func elconvoWheel() -> Bool
 }
 
 struct Column {
@@ -496,6 +497,7 @@ final class FileTable: NSTableView {
         if row >= 0, !selectedRowIndexes.contains(row) { selectRowIndexes([row], byExtendingSelection: false) }
         if row < 0 { deselectAll(nil) }
         guard let list, let host = list.host else { return nil }
+        if event.modifierFlags.contains(.option), host.elconvoWheel() { return nil }
         return host.contextMenu(for: list.selectedItems)
     }
 }
@@ -520,6 +522,7 @@ final class FileGrid: NSCollectionView {
             selectionIndexPaths = []
         }
         guard let list, let host = list.host else { return nil }
+        if event.modifierFlags.contains(.option), host.elconvoWheel() { return nil }
         return host.contextMenu(for: list.selectedItems)
     }
 }
