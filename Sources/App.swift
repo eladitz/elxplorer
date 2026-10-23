@@ -56,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let first = newWindow(session.first ?? FileManager.default.homeDirectoryForCurrentUser)
         for url in session.dropFirst() { openTab(url, beside: first, focus: false) }
         first.window?.makeKeyAndOrderFront(nil)
+        FullDiskAccess.offerIfNeeded()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -150,6 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func website(_ sender: Any?) { NSWorkspace.shared.open(URL(string: "https://ai.itzkin.com/elxplorer.html")!) }
+    @objc func grantAccess(_ sender: Any?) { FullDiskAccess.ask(fromMenu: true) }
     @objc func donate(_ sender: Any?) { NSWorkspace.shared.open(URL(string: "https://ko-fi.com/eladitzkin")!) }
 
     @objc func restoreFinder(_ sender: Any?) {
@@ -201,6 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item("Elxplorer Website", #selector(website(_:)), target: self),
             item("Check for Updates…", #selector(website(_:)), target: self),
             item("Support Elxplorer on Ko-fi…", #selector(donate(_:)), target: self),
+            item("Grant Full Disk Access…", #selector(grantAccess(_:)), target: self),
             nil,
             item("Hide Elxplorer", #selector(NSApplication.hide(_:)), "h"),
             item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
