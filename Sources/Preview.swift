@@ -3,6 +3,8 @@
 
 import AppKit
 import Quartz
+import AVKit
+import UniformTypeIdentifiers
 
 enum Details {
     /// Readable facts about a file from Spotlight's metadata: dimensions, duration, camera, pages, source…
@@ -38,7 +40,13 @@ enum Details {
 
 @MainActor
 final class PreviewPane: NSView {
+    // Pictures and video get their own viewers (sharp, scalable, real playback controls);
+    // everything else goes through Quick Look.
+    private let stage = NSView()
     private let preview = QLPreviewView(frame: .zero, style: .normal)!
+    private let picture = NSImageView()
+    private let player = AVPlayerView()
+    private var pictureJob = 0
     private let info = NSStackView()
     private var sizeJob: Thread?
     private var shown: URL?
@@ -55,15 +63,27 @@ final class PreviewPane: NSView {
         infoScroll.documentView = info
         infoScroll.hasVerticalScroller = true
         infoScroll.drawsBackground = false
-        for v in [preview, infoScroll] as [NSView] {
+        picture.imageScaling = .scaleProportionallyDown
+        picture.animates = true   // GIFs play
+        player.controlsStyle = .inline
+        player.showsFullScreenToggleButton = true
+        for v in [preview, picture, player] as [NSView] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            stage.addSubview(v)
+            NSLayoutConstraint.activate([v.topAnchor.constraint(equalTo: stage.topAnchor, constant: 8),
+                                         v.bottomAnchor.constraint(equalTo: stage.bottomAnchor, constant: -8),
+                                         v.leadingAnchor.constraint(equalTo: stage.leadingAnchor, constant: 8),
+                                         v.trailingAnchor.constraint(equalTo: stage.trailingAnchor, constant: -8)])
+        }
+        for v in [stage, infoScroll] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
         info.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            preview.topAnchor.constraint(equalTo: topAnchor), preview.leadingAnchor.constraint(equalTo: leadingAnchor),
-            preview.trailingAnchor.constraint(equalTo: trailingAnchor), preview.heightAnchor.constraint(equalTo: heightAnchor, multiplier: 0.55),
-            infoScroll.topAnchor.constraint(equalTo: preview.bottomAnchor), infoScroll.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stage.topAnchor.constraint(equalTo: topAnchor), stage.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stage.trailingAnchor.constraint(equalTo: trailingAnchor), stage.heightAnchor.constraint(equalTo: heightAnchor, multiplier: 0.6),
+            infoScroll.topAnchor.constraint(equalTo: stage.bottomAnchor), infoScroll.leadingAnchor.constraint(equalTo: leadingAnchor),
             infoScroll.trailingAnchor.constraint(equalTo: trailingAnchor), infoScroll.bottomAnchor.constraint(equalTo: bottomAnchor),
             info.widthAnchor.constraint(equalTo: infoScroll.widthAnchor),
         ])
@@ -74,14 +94,14 @@ final class PreviewPane: NSView {
     func show(_ items: [FileItem]) {
         guard items.count == 1, let item = items.first else {
             shown = nil
-            preview.previewItem = nil
+            display(nil)
             fill(items.isEmpty ? [] : [("Selected", "\(items.count) items"),
                                        ("Size", Format.size(items.compactMap(\.size).reduce(0, +)))], title: nil)
             return
         }
         guard item.url != shown else { return }
         shown = item.url
-        preview.previewItem = item.url as NSURL
+        display(item)
         var rows: [(String, String)] = [("Type", item.kind),
                                          ("Location", (item.url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath)]
         if let s = item.size { rows.append(("Size", Format.size(s))) }
@@ -91,6 +111,48 @@ final class PreviewPane: NSView {
         rows += Details.facts(item.url)
         fill(rows, title: item.name)
         if item.isFolder { measure(item.url) }
+    }
+
+    private enum Viewer { case quickLook, picture, video }
+
+    private func display(_ item: FileItem?) {
+        player.player?.pause()
+        let type = item?.typeID.flatMap(UTType.init)
+        let viewer: Viewer = type == nil ? .quickLook
+            : type!.conforms(to: .image) ? .picture
+            : type!.conforms(to: .audiovisualContent) ? .video : .quickLook
+        preview.isHidden = viewer != .quickLook
+        picture.isHidden = viewer != .picture
+        player.isHidden = viewer != .video
+        preview.previewItem = viewer == .quickLook ? item?.url as NSURL? : nil
+        player.player = viewer == .video ? item.map { AVPlayer(url: $0.url) } : nil
+        picture.image = nil
+        if viewer == .picture, let url = item?.url { loadPicture(url) }
+    }
+
+    /// A screen-sized rendering made in the background, so a 100-megapixel RAW doesn't stall the window.
+    private func loadPicture(_ url: URL) {
+        pictureJob += 1
+        let job = pictureJob
+        let longest = 2 * max(bounds.width, 600)
+        DispatchQueue.global(qos: .userInitiated).async {
+            var image: NSImage?
+            if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+               let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                   kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
+                   kCGImageSourceThumbnailMaxPixelSize: longest] as CFDictionary) {
+                // Animated GIFs keep their frames; everything else uses the downsized copy.
+                image = url.pathExtension.lowercased() == "gif" ? NSImage(contentsOf: url) : NSImage(cgImage: cg, size: .zero)
+            } else {
+                image = NSImage(contentsOf: url)   // SVG, PDF-as-image and other things ImageIO can't read
+            }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard self.pictureJob == job else { return }
+                    self.picture.image = image
+                }
+            }
+        }
     }
 
     /// Folder size is worked out in the background and added when it's ready.

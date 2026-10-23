@@ -133,7 +133,7 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
         split.setHoldingPriority(.defaultHigh - 1, forSubviewAt: 2)
         sidebar.scroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
         preview.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
-        preview.isHidden = !Settings.shared.showPreview
+        preview.isHidden = true   // shown by updatePreview() when wanted
 
         status.font = .systemFont(ofSize: 11)
         status.textColor = .secondaryLabelColor
@@ -198,7 +198,7 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [Item.back, Item.forward, Item.up, Item.refresh, Item.address, Item.search]
+        [Item.back, Item.forward, Item.up, Item.refresh, Item.address, Item.preview, Item.search]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -361,14 +361,29 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
             list.beginRename(item)
         }
         updateStatus()
-        if !preview.isHidden { preview.show(list.selectedItems) }
+        updatePreview()
+    }
+
+    /// The pane shows when asked for (View ▸ Preview Pane), or by itself while a picture/video is selected.
+    private func updatePreview() {
+        let s = Settings.shared
+        let chosen = list.selectedItems
+        let wanted = s.showPreview || (s.autoPreviewMedia && chosen.count == 1 && chosen[0].isMedia)
+        if wanted && preview.isHidden {
+            preview.isHidden = false
+            // Give pictures room: about a third of the window, unless you've dragged it wider before.
+            let total = split.bounds.width
+            if preview.frame.width < total * 0.28 { split.setPosition(total - max(320, total * 0.36), ofDividerAt: 1) }
+        } else if !wanted && !preview.isHidden {
+            preview.isHidden = true
+        }
+        if wanted { preview.show(chosen) }
     }
 
     private func settingsChanged() {
         if shownHidden != Settings.shared.showHidden { reload() }
         if list.scroll.documentView !== list.focusView { list.applyViewMode() }
         list.applySort()
-        preview.isHidden = !Settings.shared.showPreview
         rebuild()
     }
 
@@ -423,7 +438,7 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
 
     func selectionChanged() {
         updateStatus()
-        if !preview.isHidden { preview.show(list.selectedItems) }
+        updatePreview()
         if QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible { QLPreviewPanel.shared().reloadData() }
     }
 
@@ -582,6 +597,7 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
     @objc func showIcons(_ sender: Any?) { Settings.shared.viewMode = "icons" }
     @objc func toggleView(_ sender: Any?) { Settings.shared.viewMode = list.isGrid ? "details" : "icons" }
     @objc func togglePreviewPane(_ sender: Any?) { Settings.shared.showPreview.toggle() }
+    @objc func toggleAutoPreview(_ sender: Any?) { Settings.shared.autoPreviewMedia.toggle() }
     @objc func toggleHidden(_ sender: Any?) { Settings.shared.showHidden.toggle() }
     @objc func toggleExtensions(_ sender: Any?) { Settings.shared.showExtensions.toggle() }
     @objc func toggleFoldersFirst(_ sender: Any?) { Settings.shared.foldersFirst.toggle() }
@@ -611,6 +627,7 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
         case #selector(showDetails(_:)): menuItem.state = list.isGrid ? .off : .on
         case #selector(showIcons(_:)): menuItem.state = list.isGrid ? .on : .off
         case #selector(togglePreviewPane(_:)): menuItem.state = s.showPreview ? .on : .off
+        case #selector(toggleAutoPreview(_:)): menuItem.state = s.autoPreviewMedia ? .on : .off
         case #selector(toggleHidden(_:)): menuItem.state = s.showHidden ? .on : .off
         case #selector(toggleExtensions(_:)): menuItem.state = s.showExtensions ? .on : .off
         case #selector(toggleFoldersFirst(_:)): menuItem.state = s.foldersFirst ? .on : .off

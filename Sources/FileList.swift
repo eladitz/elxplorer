@@ -142,7 +142,8 @@ final class FileList: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTe
     }
 
     func select(_ urls: Set<URL>) {
-        let indexes = IndexSet(rows.indices.filter { rows[$0].item.map { urls.contains($0.url) } ?? false })
+        let wanted = Set(urls.map(\.canonicalPath))
+        let indexes = IndexSet(rows.indices.filter { rows[$0].item.map { wanted.contains($0.url.canonicalPath) } ?? false })
         table.selectRowIndexes(indexes, byExtendingSelection: false)
         grid.selectionIndexPaths = Set(indexes.map { IndexPath(item: $0, section: 0) })
         if let first = indexes.first {

@@ -80,7 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var isDir: ObjCBool = false
         FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
         let folder = isDir.boolValue ? url : url.deletingLastPathComponent()
-        if let existing = Browser.all.first(where: { $0.folder?.standardizedFileURL == folder.standardizedFileURL }) {
+        if let existing = Browser.all.first(where: { $0.folder?.canonicalPath == folder.canonicalPath }) {
             existing.window?.makeKeyAndOrderFront(nil)
             if !isDir.boolValue { existing.navigate(to: url, record: false) }
         } else if let current = activeBrowser {
@@ -240,6 +240,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item("Folder Sizes", #selector(Browser.toggleFolderSizes(_:))),
             nil,
             item("Preview Pane", #selector(Browser.togglePreviewPane(_:)), "p", [.command, .option]),
+            item("Auto Preview for Images & Video", #selector(Browser.toggleAutoPreview(_:))),
             item("Hidden Files", #selector(Browser.toggleHidden(_:)), ".", [.command, .shift]),
             item("File Name Extensions", #selector(Browser.toggleExtensions(_:))),
             nil,

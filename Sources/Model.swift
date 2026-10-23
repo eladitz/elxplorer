@@ -3,6 +3,11 @@
 import AppKit
 import UniformTypeIdentifiers
 
+extension URL {
+    /// One spelling per place on disk: /tmp and /private/tmp (or a symlinked folder) compare equal.
+    var canonicalPath: String { standardizedFileURL.resolvingSymlinksInPath().path }
+}
+
 // MARK: - A file or folder in a listing
 
 final class FileItem: NSObject {
@@ -33,6 +38,12 @@ final class FileItem: NSObject {
         typeID = v?.typeIdentifier
         isHidden = v?.isHidden == true || url.lastPathComponent.hasPrefix(".")
         tags = v?.tagNames ?? []
+    }
+
+    /// Pictures, video and audio: what the preview pane opens for by itself.
+    var isMedia: Bool {
+        guard !isFolder, let id = typeID, let type = UTType(id) else { return false }
+        return type.conforms(to: .image) || type.conforms(to: .audiovisualContent)
     }
 
     /// The name as shown: with or without its extension, per the setting.
@@ -87,6 +98,8 @@ final class Settings {
     var showExtensions: Bool { get { flag("showExtensions", true) } set { set(newValue, "showExtensions") } }
     var foldersFirst: Bool { get { flag("foldersFirst", true) } set { set(newValue, "foldersFirst") } }
     var showPreview: Bool { get { flag("showPreview", false) } set { set(newValue, "showPreview") } }
+    /// Open the preview pane by itself when a picture, video or audio file is selected.
+    var autoPreviewMedia: Bool { get { flag("autoPreviewMedia", true) } set { set(newValue, "autoPreviewMedia") } }
     var sortKey: String { get { d.string(forKey: "sortKey") ?? "name" } set { set(newValue, "sortKey") } }
     var ascending: Bool { get { flag("ascending", true) } set { set(newValue, "ascending") } }
     var groupBy: String { get { d.string(forKey: "groupBy") ?? "none" } set { set(newValue, "groupBy") } }

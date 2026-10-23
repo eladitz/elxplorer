@@ -168,7 +168,7 @@ final class Sidebar: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate {
         quietly = true
         defer { quietly = false }
         let all = sections.flatMap(\.children)
-        if let url, let match = all.first(where: { $0.url?.standardizedFileURL == url.standardizedFileURL }) {
+        if let url, let match = all.first(where: { $0.url?.canonicalPath == url.canonicalPath }) {
             outline.selectRowIndexes([outline.row(forItem: match)], byExtendingSelection: false)
         } else {
             outline.deselectAll(nil)
