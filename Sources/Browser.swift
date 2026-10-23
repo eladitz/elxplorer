@@ -62,6 +62,10 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
         NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.settingsChanged() }
         }
+        // Sorted by size: put folders in their place once all their sizes are in (not row by row, which jumps).
+        NotificationCenter.default.addObserver(forName: FolderSizes.idle, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { if Settings.shared.sortKey == "size" { self?.rebuild() } }
+        }
         navigate(to: url, record: false)
     }
 
@@ -326,7 +330,10 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
     private func rebuild() {
         let s = Settings.shared
         let source = searching ? results : items
-        let sorted = Sorter.sort(source, key: s.sortKey, ascending: s.ascending, foldersFirst: s.foldersFirst)
+        let sizes = FolderSizes.shared
+        let sorted = Sorter.sort(source, key: s.sortKey, ascending: s.ascending, foldersFirst: s.foldersFirst) {
+            $0.isFolder && s.folderSizes ? sizes.cached($0.url) : $0.size
+        }
         var rows: [Row] = []
         switch s.groupBy {
         case "type":
@@ -382,7 +389,10 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
         navigate(to: folder.deletingLastPathComponent(), select: [folder])   // land on the folder we came from
     }
 
-    @objc func refresh(_ sender: Any?) { reload() }
+    @objc func refresh(_ sender: Any?) {
+        FolderSizes.shared.forget(items.filter(\.isFolder).map(\.url))
+        reload()
+    }
     @objc func editAddress(_ sender: Any?) { address.edit() }
     @objc func goHome(_ sender: Any?) { navigate(to: FileManager.default.homeDirectoryForCurrentUser) }
     @objc func goDesktop(_ sender: Any?) { navigate(to: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")) }
@@ -575,6 +585,7 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
     @objc func toggleHidden(_ sender: Any?) { Settings.shared.showHidden.toggle() }
     @objc func toggleExtensions(_ sender: Any?) { Settings.shared.showExtensions.toggle() }
     @objc func toggleFoldersFirst(_ sender: Any?) { Settings.shared.foldersFirst.toggle() }
+    @objc func toggleFolderSizes(_ sender: Any?) { Settings.shared.folderSizes.toggle() }
     @objc func groupNone(_ sender: Any?) { Settings.shared.groupBy = "none" }
     @objc func groupByType(_ sender: Any?) { Settings.shared.groupBy = "type" }
     @objc func groupByDate(_ sender: Any?) { Settings.shared.groupBy = "date" }
@@ -603,6 +614,7 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
         case #selector(toggleHidden(_:)): menuItem.state = s.showHidden ? .on : .off
         case #selector(toggleExtensions(_:)): menuItem.state = s.showExtensions ? .on : .off
         case #selector(toggleFoldersFirst(_:)): menuItem.state = s.foldersFirst ? .on : .off
+        case #selector(toggleFolderSizes(_:)): menuItem.state = s.folderSizes ? .on : .off
         case #selector(groupNone(_:)): menuItem.state = s.groupBy == "none" ? .on : .off
         case #selector(groupByType(_:)): menuItem.state = s.groupBy == "type" ? .on : .off
         case #selector(groupByDate(_:)): menuItem.state = s.groupBy == "date" ? .on : .off
@@ -819,7 +831,7 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
         parts.append(searching ? "\(shown.count) found\(searchNote)" : "\(shown.count) item\(shown.count == 1 ? "" : "s")")
         let chosen = list.selectedItems
         if !chosen.isEmpty {
-            let bytes = chosen.compactMap(\.size).reduce(0, +)
+            let bytes = chosen.compactMap { $0.isFolder ? FolderSizes.shared.cached($0.url) : $0.size }.reduce(0, +)
             parts.append("\(chosen.count) selected" + (bytes > 0 ? " (\(Format.size(bytes)))" : ""))
         }
         if let folder, let free = try? folder.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage {

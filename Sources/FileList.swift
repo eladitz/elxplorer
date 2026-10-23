@@ -84,6 +84,8 @@ final class FileList: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTe
         table.registerForDraggedTypes([.fileURL])
         table.setDraggingSourceOperationMask([.copy, .move], forLocal: false)
         table.headerView?.menu = columnMenu()
+        // The saved layout may come from a moment a search was showing; Folder belongs only to search results.
+        table.tableColumn(withIdentifier: .init("folder"))?.isHidden = true
 
         let layout = NSCollectionViewFlowLayout()
         layout.itemSize = NSSize(width: 118, height: 128)
@@ -101,6 +103,15 @@ final class FileList: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTe
 
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
+        NotificationCenter.default.addObserver(forName: FolderSizes.updated, object: nil, queue: .main) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self, let url = note.object as? URL,
+                      let row = self.rows.firstIndex(where: { $0.item?.url == url }) else { return }
+                let column = self.table.column(withIdentifier: .init("size"))
+                if column >= 0 { self.table.reloadData(forRowIndexes: [row], columnIndexes: [column]) }
+                self.host?.selectionChanged()   // the status bar's selection total may include it
+            }
+        }
         applyViewMode()
         applySort()
     }
@@ -116,6 +127,8 @@ final class FileList: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTe
             table.tableColumn(withIdentifier: .init("folder"))?.isHidden = !searching
         }
         self.rows = rows
+        // Stop measuring folders that are no longer listed (e.g. after leaving a big folder).
+        FolderSizes.shared.keepOnly(Set(rows.compactMap { $0.item?.isFolder == true ? $0.item?.url : nil }))
         table.reloadData()
         grid.reloadData()
         select(keep)
@@ -247,7 +260,12 @@ final class FileList: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTe
             case "modified": text = item.modified.map(Format.date.string(from:)) ?? ""
             case "created": text = item.created.map(Format.date.string(from:)) ?? ""
             case "kind": text = item.kind
-            case "size": text = Format.size(item.size)
+            case "size":
+                if item.isFolder && Settings.shared.folderSizes {
+                    text = FolderSizes.shared.size(of: item.url).map { Format.size($0) } ?? "Calculating…"
+                } else {
+                    text = Format.size(item.size)
+                }
             case "tags": text = item.tags.joined(separator: ", ")
             case "folder": text = (item.url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
             default: text = ""

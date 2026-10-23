@@ -90,6 +90,7 @@ final class Settings {
     var sortKey: String { get { d.string(forKey: "sortKey") ?? "name" } set { set(newValue, "sortKey") } }
     var ascending: Bool { get { flag("ascending", true) } set { set(newValue, "ascending") } }
     var groupBy: String { get { d.string(forKey: "groupBy") ?? "none" } set { set(newValue, "groupBy") } }
+    var folderSizes: Bool { get { flag("folderSizes", true) } set { set(newValue, "folderSizes") } }
     var viewMode: String { get { d.string(forKey: "viewMode") ?? "details" } set { set(newValue, "viewMode") } }
 
     var pinned: [URL] {
@@ -111,14 +112,15 @@ final class Settings {
 // MARK: - Sorting and grouping
 
 enum Sorter {
-    static func sort(_ items: [FileItem], key: String, ascending: Bool, foldersFirst: Bool) -> [FileItem] {
+    static func sort(_ items: [FileItem], key: String, ascending: Bool, foldersFirst: Bool,
+                     size: (FileItem) -> Int64? = { $0.size }) -> [FileItem] {
         items.sorted { a, b in
             if foldersFirst && a.isFolder != b.isFolder { return a.isFolder }
             let order: ComparisonResult
             switch key {
             case "modified": order = compare(a.modified, b.modified)
             case "created": order = compare(a.created, b.created)
-            case "size": order = compare(a.size, b.size)
+            case "size": order = compare(size(a), size(b))
             case "kind": order = a.kind.localizedStandardCompare(b.kind)
             case "folder": order = a.url.deletingLastPathComponent().path.localizedStandardCompare(b.url.deletingLastPathComponent().path)
             default: order = .orderedSame
@@ -188,6 +190,75 @@ final class FolderWatcher {
     }
 
     deinit { source?.cancel() }
+}
+
+// MARK: - Folder sizes
+
+/// Works out folder sizes in the background, two at a time, and remembers them for a while.
+/// Folders that scroll out of view (or a folder you leave) stop being measured.
+@MainActor
+final class FolderSizes {
+    static let shared = FolderSizes()
+    static let updated = Notification.Name("ElxplorerFolderSizeUpdated")   // object: the folder's URL
+    static let idle = Notification.Name("ElxplorerFolderSizesIdle")
+
+    private struct Entry { let bytes: Int64; let measured: Date }
+    private var known: [URL: Entry] = [:]
+    private var running: [URL: Operation] = [:]
+    private let queue: OperationQueue = {
+        let q = OperationQueue()
+        q.maxConcurrentOperationCount = 2
+        q.qualityOfService = .utility
+        return q
+    }()
+    private let lifetime: TimeInterval = 600
+
+    /// The size if it's known, otherwise nil (and a measurement is started).
+    func size(of url: URL) -> Int64? {
+        if let e = known[url], Date().timeIntervalSince(e.measured) < lifetime { return e.bytes }
+        measure(url)
+        return nil
+    }
+
+    func cached(_ url: URL) -> Int64? { known[url].map(\.bytes) }
+    func isMeasuring(_ url: URL) -> Bool { running[url] != nil }
+
+    private func measure(_ url: URL) {
+        guard running[url] == nil else { return }
+        let op = BlockOperation()
+        op.addExecutionBlock { [unowned op] in
+            var bytes: Int64 = 0
+            let keys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey]
+            let walker = FileManager.default.enumerator(at: url, includingPropertiesForKeys: keys, options: [], errorHandler: { _, _ in true })
+            while let f = walker?.nextObject() as? URL {
+                if op.isCancelled { return }
+                if let v = try? f.resourceValues(forKeys: Set(keys)), v.isDirectory != true { bytes += Int64(v.fileSize ?? 0) }
+            }
+            let total = bytes
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    let me = FolderSizes.shared
+                    me.running[url] = nil
+                    me.known[url] = Entry(bytes: total, measured: Date())
+                    NotificationCenter.default.post(name: Self.updated, object: url)
+                    if me.running.isEmpty { NotificationCenter.default.post(name: Self.idle, object: nil) }
+                }
+            }
+        }
+        running[url] = op
+        queue.addOperation(op)
+    }
+
+    /// Keep measuring only these folders; drop the rest of the queue.
+    func keepOnly(_ urls: Set<URL>) {
+        for (url, op) in running where !urls.contains(url) {
+            op.cancel()
+            running[url] = nil
+        }
+    }
+
+    /// Refresh: measure these again next time they're shown.
+    func forget(_ urls: [URL]) { urls.forEach { known[$0] = nil } }
 }
 
 // MARK: - Cut / copy / paste

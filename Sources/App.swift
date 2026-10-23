@@ -224,6 +224,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             nil,
             sort, group,
             item("Folders First", #selector(Browser.toggleFoldersFirst(_:))),
+            item("Folder Sizes", #selector(Browser.toggleFolderSizes(_:))),
             nil,
             item("Preview Pane", #selector(Browser.togglePreviewPane(_:)), "p", [.command, .option]),
             item("Hidden Files", #selector(Browser.toggleHidden(_:)), ".", [.command, .shift]),
