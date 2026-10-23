@@ -10,8 +10,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = true
         buildMenus()
-        // Development aid: `--snapshot out.png [folder] [search text]` draws one window to an image and quits.
+        // Development aid: `--snapshot out.png [folder] [search text]` draws one window to an image and quits;
+        // `--snapshot-drive out.png /Volumes/X` does the same for a drive's More Info window.
         let args = CommandLine.arguments
+        if let i = args.firstIndex(of: "--snapshot-drive"), i + 2 < args.count {
+            DriveWindow.show(URL(fileURLWithPath: args[i + 2]))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                if let frame = NSApp.windows.first(where: { $0.isVisible })?.contentView?.superview,
+                   let rep = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) {
+                    frame.cacheDisplay(in: frame.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: args[i + 1]))
+                }
+                exit(0)
+            }
+            return
+        }
         if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
             let folder = i + 2 < args.count ? URL(fileURLWithPath: args[i + 2]) : FileManager.default.homeDirectoryForCurrentUser
             let browser = newWindow(folder)

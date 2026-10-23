@@ -1,6 +1,22 @@
 // The navigation pane: Quick access, This Mac (drives), system locations and saved searches.
 
 import AppKit
+import CoreServices
+
+/// Finder's sidebar Favorites. The file behind them needs Full Disk Access to read, but this (old,
+/// deprecated) Launch Services API hands them over without it.
+enum FinderFavorites {
+    static func load() -> [(name: String, url: URL)] {
+        guard let list = LSSharedFileListCreate(nil, kLSSharedFileListFavoriteItems.takeUnretainedValue(), nil)?.takeRetainedValue() else { return [] }
+        var seed: UInt32 = 0
+        let items = LSSharedFileListCopySnapshot(list, &seed)?.takeRetainedValue() as? [LSSharedFileListItem] ?? []
+        let flags = UInt32(kLSSharedFileListNoUserInteraction | kLSSharedFileListDoNotMountVolumes)
+        return items.compactMap { item in
+            guard let url = LSSharedFileListItemCopyResolvedURL(item, flags, nil)?.takeRetainedValue() as URL? else { return nil }
+            return (LSSharedFileListItemCopyDisplayName(item).takeRetainedValue() as String, url)
+        }
+    }
+}
 
 final class SidebarEntry: NSObject {
     enum Kind { case section, folder, volume, search(SavedSearch) }
@@ -11,6 +27,7 @@ final class SidebarEntry: NSObject {
     var children: [SidebarEntry] = []
     var subtitle: String?
     var usedFraction: Double?
+    var tooltip: String?
     var pinned = false
 
     init(_ title: String, icon: NSImage? = nil, url: URL? = nil, kind: Kind) {
@@ -66,6 +83,10 @@ final class Sidebar: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate {
         NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.reload() }
         }
+        // Coming back from Finder: pick up favourites added or removed there, and fresh drive space.
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reload() }
+        }
     }
 
     func reload() {
@@ -86,27 +107,30 @@ final class Sidebar: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate {
             folder("Movies", home.appendingPathComponent("Movies"), "film"),
             folder("Applications", URL(fileURLWithPath: "/Applications"), "square.grid.3x3"),
         ]
-        for url in Settings.shared.pinned {
+        // Then Finder's own Favorites (minus duplicates and whole drives, which are under This Mac), then our pins.
+        func listed(_ url: URL) -> Bool { quick.children.contains { $0.url?.standardizedFileURL == url.standardizedFileURL } }
+        let volumes = Set((fm.mountedVolumeURLs(includingResourceValuesForKeys: nil, options: []) ?? []).map(\.standardizedFileURL))
+        for (name, url) in FinderFavorites.load() where !listed(url) && !volumes.contains(url.standardizedFileURL) {
+            quick.children.append(folder(name, url, "star"))
+        }
+        for url in Settings.shared.pinned where !listed(url) {
             let entry = folder(url.lastPathComponent, url, "pin")
             entry.pinned = true
             quick.children.append(entry)
         }
 
         let mac = SidebarEntry("This Mac", kind: .section)
-        let keys: [URLResourceKey] = [.volumeNameKey, .volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey,
-                                      .volumeAvailableCapacityKey, .volumeIsRemovableKey, .volumeIsInternalKey, .volumeIsReadOnlyKey]
-        for url in fm.mountedVolumeURLs(includingResourceValuesForKeys: keys, options: [.skipHiddenVolumes]) ?? [] {
-            let v = try? url.resourceValues(forKeys: Set(keys))
-            let isInternal = v?.volumeIsInternal ?? true
-            let entry = SidebarEntry(v?.volumeName ?? url.lastPathComponent,
-                                     icon: NSImage(systemSymbolName: isInternal ? "internaldrive" : "externaldrive", accessibilityDescription: nil),
+        for url in fm.mountedVolumeURLs(includingResourceValuesForKeys: DriveInfo.keys, options: [.skipHiddenVolumes]) ?? [] {
+            let drive = DriveInfo.read(url)
+            let entry = SidebarEntry(drive.name,
+                                     icon: NSImage(systemSymbolName: drive.connection == "Internal" ? "internaldrive" : "externaldrive", accessibilityDescription: nil),
                                      url: url, kind: .volume)
-            if v?.volumeIsReadOnly == true {
+            entry.tooltip = drive.summary
+            if drive.isReadOnly {
                 entry.subtitle = "Read-only"   // disk images and such: "0 free" would just look alarming
-            } else if let total = v?.volumeTotalCapacity, total > 0 {
-                let free = v?.volumeAvailableCapacityForImportantUsage.map(Int.init) ?? v?.volumeAvailableCapacity ?? 0
-                entry.subtitle = "\(Self.short(Int64(free))) free of \(Self.short(Int64(total)))"
-                entry.usedFraction = 1 - Double(free) / Double(total)
+            } else if drive.total > 0 {
+                entry.subtitle = "\(Self.short(drive.free)) free of \(Self.short(drive.total))"
+                entry.usedFraction = drive.usedFraction
             }
             mac.children.append(entry)
         }
@@ -213,6 +237,7 @@ final class Sidebar: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate {
         row.translatesAutoresizingMaskIntoConstraints = false
         cell.addSubview(row)
         cell.textField = title
+        cell.toolTip = entry.tooltip
         cell.imageView = icon
         NSLayoutConstraint.activate([row.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
                                      row.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor),
@@ -253,6 +278,11 @@ extension Sidebar: NSMenuDelegate {
             delete.target = self
             delete.representedObject = saved.name
         }
+        if case .volume = entry.kind, let url = entry.url {
+            let info = menu.addItem(withTitle: "More Info…", action: #selector(moreInfo), keyEquivalent: "")
+            info.target = self
+            info.representedObject = url
+        }
         if case .volume = entry.kind, let url = entry.url, (try? url.resourceValues(forKeys: [.volumeIsEjectableKey]).volumeIsEjectable) == true {
             let eject = menu.addItem(withTitle: "Eject", action: #selector(eject), keyEquivalent: "")
             eject.target = self
@@ -272,6 +302,10 @@ extension Sidebar: NSMenuDelegate {
     @objc private func deleteSearch(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
         Settings.shared.savedSearches.removeAll { $0.name == name }
+    }
+
+    @objc private func moreInfo(_ sender: NSMenuItem) {
+        if let url = sender.representedObject as? URL { DriveWindow.show(url) }
     }
 
     @objc private func eject(_ sender: NSMenuItem) {
