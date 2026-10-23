@@ -35,14 +35,21 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
     private let searchBar = NSStackView()
     private let scopeLabel = NSTextField(labelWithString: "")
     private let split = NSSplitView()
+    private let menuBar = WindowMenuBar()
+    private var menuBarHeight: NSLayoutConstraint!
     private var searchBarHeight: NSLayoutConstraint!
 
     // MARK: Window
 
+    /// The size you last gave a window, trimmed to the screen so a bad value can't shrink or stretch it.
     static var savedSize: NSSize {
         let d = UserDefaults.standard
+        let fallback = NSSize(width: 1100, height: 680)
         let w = d.double(forKey: "windowWidth"), h = d.double(forKey: "windowHeight")
-        return w > 400 && h > 300 ? NSSize(width: w, height: h) : NSSize(width: 1100, height: 680)
+        guard w > 560, h > 360 else { return fallback }
+        let screen = (NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main)?.visibleFrame.size ?? fallback
+        guard w <= screen.width, h <= screen.height else { return fallback }
+        return NSSize(width: w, height: h)
     }
 
     init(url: URL) {
@@ -81,7 +88,9 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {
-        guard let size = window?.frame.size else { return }
+        guard let window, let screen = window.screen?.visibleFrame.size else { return }
+        let size = window.frame.size
+        guard size.width <= screen.width, size.height <= screen.height else { return }
         UserDefaults.standard.set(size.width, forKey: "windowWidth")
         UserDefaults.standard.set(size.height, forKey: "windowHeight")
     }
@@ -127,25 +136,41 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
         split.addArrangedSubview(sidebar.scroll)
         split.addArrangedSubview(list.scroll)
         split.addArrangedSubview(preview)
-        split.autosaveName = "ElxplorerSplit"
         split.setHoldingPriority(.defaultHigh, forSubviewAt: 0)
         split.setHoldingPriority(.defaultLow, forSubviewAt: 1)
         split.setHoldingPriority(.defaultHigh - 1, forSubviewAt: 2)
-        sidebar.scroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
-        preview.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
+        let sidebarMin = sidebar.scroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 180)
+        sidebarMin.priority = .init(999)
+        sidebarMin.isActive = true
+        // The preview never takes more than 30% of the window and the list always keeps room to work.
+        // These are strong preferences, not hard rules: a hard rule could make AppKit grow the window to
+        // satisfy it, and the window only ever changes size when you resize it.
+        for c in [preview.widthAnchor.constraint(greaterThanOrEqualToConstant: 220),
+                  preview.widthAnchor.constraint(lessThanOrEqualTo: split.widthAnchor, multiplier: 0.3),
+                  list.scroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 300),
+                  sidebar.scroll.widthAnchor.constraint(lessThanOrEqualToConstant: 360)] {
+            c.priority = .init(999)
+            c.isActive = true
+        }
         preview.isHidden = true   // shown by updatePreview() when wanted
 
         status.font = .systemFont(ofSize: 11)
         status.textColor = .secondaryLabelColor
         status.lineBreakMode = .byTruncatingTail
 
-        for v in [searchBar, split, status] as [NSView] {
+        for v in [menuBar, searchBar, split, status] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             content.addSubview(v)
         }
         searchBarHeight = searchBar.heightAnchor.constraint(equalToConstant: 0)
+        menuBarHeight = menuBar.heightAnchor.constraint(equalToConstant: Settings.shared.showMenuBar ? 26 : 0)
+        menuBar.isHidden = !Settings.shared.showMenuBar
         NSLayoutConstraint.activate([
-            searchBar.topAnchor.constraint(equalTo: content.topAnchor),
+            menuBar.topAnchor.constraint(equalTo: content.topAnchor),
+            menuBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            menuBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            menuBarHeight,
+            searchBar.topAnchor.constraint(equalTo: menuBar.bottomAnchor),
             searchBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             searchBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             searchBarHeight,
@@ -371,9 +396,9 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
         let wanted = s.showPreview || (s.autoPreviewMedia && chosen.count == 1 && chosen[0].isMedia)
         if wanted && preview.isHidden {
             preview.isHidden = false
-            // Give pictures room: about a third of the window, unless you've dragged it wider before.
+            // Open at the 30% limit unless you've dragged it to a width you prefer.
             let total = split.bounds.width
-            if preview.frame.width < total * 0.28 { split.setPosition(total - max(320, total * 0.36), ofDividerAt: 1) }
+            if preview.frame.width < 220 || preview.frame.width > total * 0.3 { split.setPosition(total - total * 0.3, ofDividerAt: 1) }
         } else if !wanted && !preview.isHidden {
             preview.isHidden = true
         }
@@ -381,6 +406,8 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
     }
 
     private func settingsChanged() {
+        menuBar.isHidden = !Settings.shared.showMenuBar
+        menuBarHeight.constant = Settings.shared.showMenuBar ? 26 : 0
         if shownHidden != Settings.shared.showHidden { reload() }
         if list.scroll.documentView !== list.focusView { list.applyViewMode() }
         list.applySort()
@@ -598,6 +625,7 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
     @objc func toggleView(_ sender: Any?) { Settings.shared.viewMode = list.isGrid ? "details" : "icons" }
     @objc func togglePreviewPane(_ sender: Any?) { Settings.shared.showPreview.toggle() }
     @objc func toggleAutoPreview(_ sender: Any?) { Settings.shared.autoPreviewMedia.toggle() }
+    @objc func toggleMenuBar(_ sender: Any?) { Settings.shared.showMenuBar.toggle() }
     @objc func toggleHidden(_ sender: Any?) { Settings.shared.showHidden.toggle() }
     @objc func toggleExtensions(_ sender: Any?) { Settings.shared.showExtensions.toggle() }
     @objc func toggleFoldersFirst(_ sender: Any?) { Settings.shared.foldersFirst.toggle() }
@@ -628,6 +656,7 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
         case #selector(showIcons(_:)): menuItem.state = list.isGrid ? .on : .off
         case #selector(togglePreviewPane(_:)): menuItem.state = s.showPreview ? .on : .off
         case #selector(toggleAutoPreview(_:)): menuItem.state = s.autoPreviewMedia ? .on : .off
+        case #selector(toggleMenuBar(_:)): menuItem.state = s.showMenuBar ? .on : .off
         case #selector(toggleHidden(_:)): menuItem.state = s.showHidden ? .on : .off
         case #selector(toggleExtensions(_:)): menuItem.state = s.showExtensions ? .on : .off
         case #selector(toggleFoldersFirst(_:)): menuItem.state = s.foldersFirst ? .on : .off
@@ -913,5 +942,50 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
         // Arrow keys move through the list while the preview is open.
         if event.type == .keyDown { list.focusView.keyDown(with: event); return true }
         return false
+    }
+}
+
+/// Explorer's classic in-window menu bar: File, Edit, View, Go, Window, opening the same menus as the
+/// macOS menu bar (same items, same shortcuts, same enabled/disabled state).
+@MainActor
+final class WindowMenuBar: NSView {
+    private let stack = NSStackView()
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        stack.orientation = .horizontal
+        stack.spacing = 2
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: 6, bottom: 0, right: 6)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: leadingAnchor), stack.topAnchor.constraint(equalTo: topAnchor),
+                                     stack.bottomAnchor.constraint(equalTo: bottomAnchor)])
+        // Every top-level menu except the app's own (About, Quit), which macOS keeps for itself.
+        for item in (NSApp.mainMenu?.items ?? []).dropFirst() {
+            guard let menu = item.submenu else { continue }
+            let button = NSButton(title: menu.title, target: self, action: #selector(open(_:)))
+            button.isBordered = false
+            button.font = .systemFont(ofSize: 13)
+            button.contentTintColor = .labelColor
+            button.setButtonType(.momentaryChange)
+            stack.addArrangedSubview(button)
+            button.identifier = NSUserInterfaceItemIdentifier(menu.title)
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.windowBackgroundColor.setFill()
+        bounds.fill()
+        NSColor.separatorColor.setFill()
+        NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
+    }
+
+    @objc private func open(_ sender: NSButton) {
+        guard let title = sender.identifier?.rawValue,
+              let menu = NSApp.mainMenu?.items.first(where: { $0.submenu?.title == title })?.submenu else { return }
+        let below = NSPoint(x: 0, y: sender.isFlipped ? sender.bounds.maxY + 4 : -4)
+        menu.popUp(positioning: nil, at: below, in: sender)
     }
 }

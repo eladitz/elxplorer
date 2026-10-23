@@ -241,6 +241,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             nil,
             item("Preview Pane", #selector(Browser.togglePreviewPane(_:)), "p", [.command, .option]),
             item("Auto Preview for Images & Video", #selector(Browser.toggleAutoPreview(_:))),
+            item("Menu Bar in Window", #selector(Browser.toggleMenuBar(_:))),
             item("Hidden Files", #selector(Browser.toggleHidden(_:)), ".", [.command, .shift]),
             item("File Name Extensions", #selector(Browser.toggleExtensions(_:))),
             nil,

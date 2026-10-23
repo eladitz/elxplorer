@@ -61,6 +61,7 @@ final class FileList: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTe
             col.title = c.title
             col.width = c.width
             col.minWidth = 50
+            col.maxWidth = c.id == "name" ? 900 : 600   // a huge window can't leave a giant column behind
             col.isHidden = c.hiddenByDefault
             col.sortDescriptorPrototype = NSSortDescriptor(key: c.id, ascending: true)
             if c.rightAligned { col.headerCell.alignment = .right }
@@ -103,6 +104,12 @@ final class FileList: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTe
 
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
+        // Whenever the list gets wider or narrower (window resize, preview pane, sidebar), Name absorbs
+        // the change so the other columns always stay in view.
+        scroll.contentView.postsFrameChangedNotifications = true
+        NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: scroll.contentView, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.fitColumns() }
+        }
         NotificationCenter.default.addObserver(forName: FolderSizes.updated, object: nil, queue: .main) { [weak self] note in
             MainActor.assumeIsolated {
                 guard let self, let url = note.object as? URL,
@@ -154,6 +161,15 @@ final class FileList: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTe
 
     var isGrid: Bool { Settings.shared.viewMode == "icons" }
     var focusView: NSView { isGrid ? grid : table }
+
+    func fitColumns() {
+        guard !isGrid, let name = table.tableColumn(withIdentifier: .init("name")) else { return }
+        let available = scroll.contentView.bounds.width
+        let spacing = table.intercellSpacing.width
+        let others = table.tableColumns.filter { !$0.isHidden && $0 !== name }.reduce(0) { $0 + $1.width + spacing }
+        let target = min(name.maxWidth, max(160, available - others - spacing - 2))
+        if abs(name.width - target) > 0.5 { name.width = target }
+    }
 
     func applyViewMode() {
         scroll.documentView = isGrid ? grid : table

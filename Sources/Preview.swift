@@ -57,14 +57,28 @@ final class PreviewPane: NSView {
         preview.shouldCloseWithWindow = false
         info.orientation = .vertical
         info.alignment = .leading
+        info.setClippingResistancePriority(.init(1), for: .horizontal)
         info.spacing = 4
         info.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 12, right: 12)
         let infoScroll = NSScrollView()
-        infoScroll.documentView = info
+        let holder = FlippedView()   // details read from the top down, not pinned to the bottom
+        holder.addSubview(info)
+        info.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([info.topAnchor.constraint(equalTo: holder.topAnchor), info.leadingAnchor.constraint(equalTo: holder.leadingAnchor),
+                                     info.trailingAnchor.constraint(equalTo: holder.trailingAnchor), info.bottomAnchor.constraint(equalTo: holder.bottomAnchor)])
+        holder.translatesAutoresizingMaskIntoConstraints = false
+        infoScroll.documentView = holder
         infoScroll.hasVerticalScroller = true
         infoScroll.drawsBackground = false
         picture.imageScaling = .scaleProportionallyDown
         picture.animates = true   // GIFs play
+        // An image view wants to be as big as its image; here it should just fit whatever room the pane has.
+        for v in [picture, preview, player] as [NSView] {
+            for axis in [NSLayoutConstraint.Orientation.horizontal, .vertical] {
+                v.setContentCompressionResistancePriority(.init(1), for: axis)
+                v.setContentHuggingPriority(.init(1), for: axis)
+            }
+        }
         player.controlsStyle = .inline
         player.showsFullScreenToggleButton = true
         for v in [preview, picture, player] as [NSView] {
@@ -79,13 +93,13 @@ final class PreviewPane: NSView {
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
         }
-        info.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             stage.topAnchor.constraint(equalTo: topAnchor), stage.leadingAnchor.constraint(equalTo: leadingAnchor),
             stage.trailingAnchor.constraint(equalTo: trailingAnchor), stage.heightAnchor.constraint(equalTo: heightAnchor, multiplier: 0.6),
             infoScroll.topAnchor.constraint(equalTo: stage.bottomAnchor), infoScroll.leadingAnchor.constraint(equalTo: leadingAnchor),
             infoScroll.trailingAnchor.constraint(equalTo: trailingAnchor), infoScroll.bottomAnchor.constraint(equalTo: bottomAnchor),
-            info.widthAnchor.constraint(equalTo: infoScroll.widthAnchor),
+            holder.widthAnchor.constraint(equalTo: infoScroll.contentView.widthAnchor),
+            holder.topAnchor.constraint(equalTo: infoScroll.contentView.topAnchor),
         ])
     }
 
@@ -177,22 +191,45 @@ final class PreviewPane: NSView {
         if let title {
             let t = NSTextField(wrappingLabelWithString: title)
             t.font = .boldSystemFont(ofSize: 13)
-            info.addArrangedSubview(t)
+            info.addArrangedSubview(yielding(t))
         }
         rows.forEach { addRow($0.0, $0.1) }
+        needsLayout = true
+    }
+
+    /// Text in the pane wraps to the pane; it never asks for more room (which would stretch the window).
+    private func yielding(_ label: NSTextField) -> NSTextField {
+        label.setContentCompressionResistancePriority(.init(1), for: .horizontal)
+        label.setContentHuggingPriority(.init(1), for: .horizontal)
+        label.preferredMaxLayoutWidth = max(100, bounds.width - 24)
+        return label
+    }
+
+    // The pane takes whatever size the window gives it, never the other way round.
+    override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric) }
+
+    override func layout() {
+        super.layout()
+        let width = max(100, bounds.width - 24)
+        func update(_ view: NSView) {
+            if let label = view as? NSTextField, label.preferredMaxLayoutWidth != width { label.preferredMaxLayoutWidth = width }
+            view.subviews.forEach(update)
+        }
+        update(info)
     }
 
     private func addRow(_ key: String, _ value: String) {
         let k = NSTextField(labelWithString: key)
         k.font = .systemFont(ofSize: 11)
         k.textColor = .secondaryLabelColor
-        let v = NSTextField(wrappingLabelWithString: value)
+        let v = yielding(NSTextField(wrappingLabelWithString: value))
         v.font = .systemFont(ofSize: 12)
         v.isSelectable = true
         let pair = NSStackView(views: [k, v])
         pair.orientation = .vertical
         pair.alignment = .leading
         pair.spacing = 0
+        pair.setClippingResistancePriority(.init(1), for: .horizontal)
         info.addArrangedSubview(pair)
     }
 }
@@ -217,4 +254,8 @@ enum Properties {
         }
         window.makeKeyAndOrderFront(nil)
     }
+}
+
+final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
 }

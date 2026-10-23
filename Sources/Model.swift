@@ -99,6 +99,7 @@ final class Settings {
     var foldersFirst: Bool { get { flag("foldersFirst", true) } set { set(newValue, "foldersFirst") } }
     var showPreview: Bool { get { flag("showPreview", false) } set { set(newValue, "showPreview") } }
     /// Open the preview pane by itself when a picture, video or audio file is selected.
+    var showMenuBar: Bool { get { flag("showMenuBar", true) } set { set(newValue, "showMenuBar") } }
     var autoPreviewMedia: Bool { get { flag("autoPreviewMedia", true) } set { set(newValue, "autoPreviewMedia") } }
     var sortKey: String { get { d.string(forKey: "sortKey") ?? "name" } set { set(newValue, "sortKey") } }
     var ascending: Bool { get { flag("ascending", true) } set { set(newValue, "ascending") } }

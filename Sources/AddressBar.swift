@@ -25,6 +25,8 @@ final class AddressBar: NSView, NSTextFieldDelegate {
         field.bezelStyle = .roundedBezel
         field.lineBreakMode = .byTruncatingHead
         for v in [crumbs, field] {
+            // A long path shrinks (the middle folders collapse) instead of pushing buttons off the toolbar.
+            v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             v.translatesAutoresizingMaskIntoConstraints = false
             addSubview(v)
             NSLayoutConstraint.activate([v.leadingAnchor.constraint(equalTo: leadingAnchor), v.trailingAnchor.constraint(equalTo: trailingAnchor),
