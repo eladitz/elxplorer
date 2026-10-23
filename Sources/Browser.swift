@@ -224,7 +224,11 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
         list.scroll.frame = NSRect(x: side + gap, y: 0, width: listWidth, height: height)
         preview.frame = NSRect(x: side + gap + listWidth + gap, y: 0, width: pane, height: height)
         list.fitColumns()
+        split.needsDisplay = true   // repaint the dividers where they now are (none left behind)
     }
+
+    /// No divider line beside the list while the preview is closed.
+    func splitView(_ splitView: NSSplitView, shouldHideDividerAt index: Int) -> Bool { index == 1 && preview.isHidden }
 
     /// Divider drag limits: sidebar 150–420, list at least 260, preview from 160 up to 60% of the window.
     func splitView(_ splitView: NSSplitView, constrainMinCoordinate proposed: CGFloat, ofSubviewAt index: Int) -> CGFloat {
