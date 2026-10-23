@@ -46,6 +46,9 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
     /// The size you last gave a window, trimmed to the screen so a bad value can't shrink or stretch it.
     static var savedSize: NSSize {
         let d = UserDefaults.standard
+        if let size = ProcessInfo.processInfo.environment["ELX_SIZE"]?.split(separator: "x").compactMap({ Double($0) }), size.count == 2 {
+            return NSSize(width: size[0], height: size[1])   // screenshots
+        }
         let fallback = NSSize(width: 1100, height: 680)
         let w = d.double(forKey: "windowWidth"), h = d.double(forKey: "windowHeight")
         guard w > 560, h > 360 else { return fallback }
@@ -204,10 +207,11 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
     private func layoutPanes() {
         let total = split.bounds.width, height = split.bounds.height, gap = split.dividerThickness
         let s = Settings.shared
-        var side = min(max(s.sidebarWidth, Self.sidebarMin), Self.sidebarMax)
+        let demo = ProcessInfo.processInfo.environment["ELX_DEMO"] != nil   // website screenshots: default widths
+        var side = demo ? 220 : min(max(s.sidebarWidth, Self.sidebarMin), Self.sidebarMax)
         var pane: CGFloat = 0
         if !preview.isHidden {
-            pane = s.previewWidth > 0 ? s.previewWidth : total * 0.3
+            pane = s.previewWidth > 0 && !demo ? s.previewWidth : total * 0.3
             pane = min(max(pane, Self.previewMin), max(Self.previewMin, total * Self.previewMaxShare))
         }
         let gaps = gap * (preview.isHidden ? 1 : 2)

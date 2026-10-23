@@ -149,6 +149,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.runModal()
     }
 
+    @objc func website(_ sender: Any?) { NSWorkspace.shared.open(URL(string: "https://ai.itzkin.com/elxplorer.html")!) }
+    @objc func donate(_ sender: Any?) { NSWorkspace.shared.open(URL(string: "https://ko-fi.com/eladitzkin")!) }
+
     @objc func restoreFinder(_ sender: Any?) {
         LSSetDefaultRoleHandlerForContentType("public.folder" as CFString, .viewer, "com.apple.finder" as CFString)
         runDefaults(["delete", "-g", "NSFileViewer"])
@@ -194,6 +197,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             nil,
             item("Make Elxplorer the Default File Browser", #selector(makeDefault(_:)), target: self),
             item("Restore Finder as Default", #selector(restoreFinder(_:)), target: self),
+            nil,
+            item("Elxplorer Website", #selector(website(_:)), target: self),
+            item("Check for Updates…", #selector(website(_:)), target: self),
+            item("Support Elxplorer on Ko-fi…", #selector(donate(_:)), target: self),
             nil,
             item("Hide Elxplorer", #selector(NSApplication.hide(_:)), "h"),
             item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),

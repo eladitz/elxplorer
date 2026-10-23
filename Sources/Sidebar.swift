@@ -110,10 +110,12 @@ final class Sidebar: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate {
         // Then Finder's own Favorites (minus duplicates and whole drives, which are under This Mac), then our pins.
         func listed(_ url: URL) -> Bool { quick.children.contains { $0.url?.standardizedFileURL == url.standardizedFileURL } }
         let volumes = Set((fm.mountedVolumeURLs(includingResourceValuesForKeys: nil, options: []) ?? []).map(\.standardizedFileURL))
-        for (name, url) in FinderFavorites.load() where !listed(url) && !volumes.contains(url.standardizedFileURL) {
+        // ELX_DEMO (screenshots for the website) leaves out personal favourites and pins.
+        let demo = ProcessInfo.processInfo.environment["ELX_DEMO"] != nil
+        for (name, url) in (demo ? [] : FinderFavorites.load()) where !listed(url) && !volumes.contains(url.standardizedFileURL) {
             quick.children.append(folder(name, url, "star"))
         }
-        for url in Settings.shared.pinned where !listed(url) {
+        for url in (demo ? [] : Settings.shared.pinned) where !listed(url) {
             let entry = folder(url.lastPathComponent, url, "pin")
             entry.pinned = true
             quick.children.append(entry)
