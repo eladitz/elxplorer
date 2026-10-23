@@ -30,7 +30,7 @@ Elxplorer takes the ten most common Finder complaints and answers each one:
 | Tabs and windows get chaotic | Real tabs; opening a folder that's already open **reuses its tab**; new windows open on the screen you're using; tabs come back after a restart. |
 | Large folders are slow | Folders load in the background, only visible rows are drawn, the list updates live. **Folder sizes** are measured in the background. |
 | Too little customisation | Customisable toolbar, Explorer-style menu bar in the window, rich right-click menu (Copy as Path, Open in Terminal, Compress, Open With…), every shortcut remappable in System Settings. |
-| Previews and metadata are limited | A **preview pane** that opens by itself for pictures, video, audio, **PDF, text and code, and 3D models** (STL, OBJ, PLY, USDZ…), with details such as dimensions, camera, duration and pages. Several files show as a **pile**, newest on top. |
+| Previews and metadata are limited | A **preview pane** that opens by itself for pictures, video, audio, **PDF, text and code, and 3D models** (STL, 3MF, OBJ, PLY, USDZ… drag to turn them), with details such as dimensions, camera, duration and pages. Several files show as a **pile**, newest on top. |
 | Bugs and odd layouts | Plain, standard AppKit; the window never resizes itself. |
 
 <p align="center">
@@ -88,6 +88,7 @@ Needs only the Xcode Command Line Tools (`xcode-select --install`).
 | `Sources/AddressBar.swift` | Breadcrumbs that turn into a typeable path |
 | `Sources/Search.swift` | Name search, wildcards, filters, Spotlight contents search |
 | `Sources/Preview.swift` | Preview pane: pictures, video, PDF, text, 3D, the pile |
+| `Sources/Model3D.swift` | 3D previews: 3MF reader, print-file lighting and orientation |
 | `Sources/Drive.swift` | Drive space and More Info |
 | `Sources/Model.swift` | Files, settings, folder sizes, cut/copy/paste, file operations |
 | `Sources/Elconvo.swift` | Talking to Elconvo |

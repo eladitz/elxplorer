@@ -40,7 +40,7 @@ final class FileItem: NSObject {
         tags = v?.tagNames ?? []
     }
 
-    static let modelExtensions: Set<String> = ["stl", "obj", "ply", "usdz", "usd", "usda", "usdc", "dae", "abc", "scn"]
+    static let modelExtensions: Set<String> = ["stl", "obj", "3mf", "ply", "usdz", "usd", "usda", "usdc", "dae", "abc", "scn"]
 
     /// What the preview pane opens for by itself: pictures, video, audio, PDFs, text and code, 3D models.
     var isPreviewable: Bool {

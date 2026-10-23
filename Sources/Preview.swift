@@ -54,6 +54,7 @@ final class PreviewPane: NSView {
     private let pdf = PDFView()
     private let textScroll = NSTextView.scrollableTextView()
     private let model = SCNView()
+    private let modelHint = NSTextField(labelWithString: "Drag to turn · Scroll to zoom · ⌥-drag to move")
     private let pile = PhotoPile()
     private var pictureJob = 0
     private let info = NSStackView()
@@ -100,9 +101,20 @@ final class PreviewPane: NSView {
             text.backgroundColor = .textBackgroundColor
         }
         textScroll.hasVerticalScroller = true
-        model.allowsCameraControl = true            // drag to rotate, pinch/scroll to zoom
+        // Drag turns the model like a turntable (left/right spins, up/down tilts, never flips over),
+        // with a little momentum; scroll or pinch zooms, ⌥-drag moves it.
+        model.allowsCameraControl = true
+        model.defaultCameraController.interactionMode = .orbitTurntable
+        model.defaultCameraController.inertiaEnabled = true
         model.autoenablesDefaultLighting = true
         model.backgroundColor = .clear
+        modelHint.font = .systemFont(ofSize: 11)
+        modelHint.textColor = .secondaryLabelColor
+        modelHint.alignment = .center
+        modelHint.translatesAutoresizingMaskIntoConstraints = false
+        model.addSubview(modelHint)
+        NSLayoutConstraint.activate([modelHint.centerXAnchor.constraint(equalTo: model.centerXAnchor),
+                                     modelHint.bottomAnchor.constraint(equalTo: model.bottomAnchor, constant: -6)])
         for v in [preview, picture, player, pdf, textScroll, model, pile] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             stage.addSubview(v)
@@ -224,31 +236,13 @@ final class PreviewPane: NSView {
         pictureJob += 1
         let job = pictureJob
         DispatchQueue.global(qos: .userInitiated).async {
-            let ext = url.pathExtension.lowercased()
-            var scene: SCNScene?
-            if ["stl", "obj", "ply"].contains(ext) {
-                let asset = MDLAsset(url: url)
-                asset.loadTextures()
-                scene = SCNScene(mdlAsset: asset)
-            } else {
-                scene = try? SCNScene(url: url, options: [.convertToYUp: true])
-            }
-            // Untextured meshes (most STL files) get a neutral matte material so their shape reads well.
-            scene?.rootNode.enumerateHierarchy { node, _ in
-                guard let geometry = node.geometry else { return }
-                if geometry.materials.isEmpty || ["stl", "ply"].contains(ext) {
-                    let material = SCNMaterial()
-                    material.diffuse.contents = NSColor(calibratedWhite: 0.82, alpha: 1)
-                    material.lightingModel = .physicallyBased
-                    material.roughness.contents = 0.6
-                    geometry.materials = [material]
-                }
-            }
+            let scene = Model3D.scene(url)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard self.pictureJob == job else { return }
                     self.model.scene = scene
                     self.model.pointOfView = nil   // let SceneKit frame the whole model
+                    if let scene { self.model.defaultCameraController.frameNodes(scene.rootNode.childNodes) }
                     if ProcessInfo.processInfo.environment["ELX_DEBUG"] != nil {
                         var meshes = 0, vertices = 0
                         scene?.rootNode.enumerateHierarchy { node, _ in
