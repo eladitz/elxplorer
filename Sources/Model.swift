@@ -40,10 +40,14 @@ final class FileItem: NSObject {
         tags = v?.tagNames ?? []
     }
 
-    /// Pictures, video and audio: what the preview pane opens for by itself.
-    var isMedia: Bool {
-        guard !isFolder, let id = typeID, let type = UTType(id) else { return false }
-        return type.conforms(to: .image) || type.conforms(to: .audiovisualContent)
+    static let modelExtensions: Set<String> = ["stl", "obj", "ply", "usdz", "usd", "usda", "usdc", "dae", "abc", "scn"]
+
+    /// What the preview pane opens for by itself: pictures, video, audio, PDFs, text and code, 3D models.
+    var isPreviewable: Bool {
+        guard !isFolder else { return false }
+        if Self.modelExtensions.contains(url.pathExtension.lowercased()) { return true }
+        guard let id = typeID, let type = UTType(id) else { return false }
+        return [.image, .audiovisualContent, .pdf, .text, .sourceCode, .json, .xml, .propertyList].contains { type.conforms(to: $0) }
     }
 
     /// The name as shown: with or without its extension, per the setting.
@@ -99,6 +103,16 @@ final class Settings {
     var foldersFirst: Bool { get { flag("foldersFirst", true) } set { set(newValue, "foldersFirst") } }
     var showPreview: Bool { get { flag("showPreview", false) } set { set(newValue, "showPreview") } }
     /// Open the preview pane by itself when a picture, video or audio file is selected.
+    /// The sidebar width you last dragged to.
+    var sidebarWidth: CGFloat {
+        get { let w = d.double(forKey: "sidebarWidth"); return w > 0 ? CGFloat(w) : 220 }
+        set { d.set(Double(newValue), forKey: "sidebarWidth") }
+    }
+    /// The preview width you last dragged to (0: not chosen yet).
+    var previewWidth: CGFloat {
+        get { CGFloat(d.double(forKey: "previewWidth")) }
+        set { d.set(Double(newValue), forKey: "previewWidth") }   // no notification: nothing else redraws
+    }
     var showMenuBar: Bool { get { flag("showMenuBar", true) } set { set(newValue, "showMenuBar") } }
     var autoPreviewMedia: Bool { get { flag("autoPreviewMedia", true) } set { set(newValue, "autoPreviewMedia") } }
     var sortKey: String { get { d.string(forKey: "sortKey") ?? "name" } set { set(newValue, "sortKey") } }

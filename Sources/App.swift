@@ -30,6 +30,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let browser = newWindow(folder)
             if i + 3 < args.count { browser.searchField.stringValue = args[i + 3]; browser.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: browser.searchField)) }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                if ProcessInfo.processInfo.environment["ELX_DEBUG"] != nil, let split = browser.window?.contentView?.subviews.compactMap({ $0 as? NSSplitView }).first {
+                    print("split", split.bounds.width, split.subviews.map { "\($0.isHidden ? "hidden " : "")\(Int($0.frame.minX))+\(Int($0.frame.width))" })
+                }
                 if let frame = browser.window?.contentView?.superview, let rep = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) {
                     frame.cacheDisplay(in: frame.bounds, to: rep)
                     try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: args[i + 1]))
@@ -240,7 +243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item("Folder Sizes", #selector(Browser.toggleFolderSizes(_:))),
             nil,
             item("Preview Pane", #selector(Browser.togglePreviewPane(_:)), "p", [.command, .option]),
-            item("Auto Preview for Images & Video", #selector(Browser.toggleAutoPreview(_:))),
+            item("Auto Preview (pictures, video, PDF, text, 3D)", #selector(Browser.toggleAutoPreview(_:))),
             item("Menu Bar in Window", #selector(Browser.toggleMenuBar(_:))),
             item("Hidden Files", #selector(Browser.toggleHidden(_:)), ".", [.command, .shift]),
             item("File Name Extensions", #selector(Browser.toggleExtensions(_:))),

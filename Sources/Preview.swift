@@ -5,6 +5,10 @@ import AppKit
 import Quartz
 import AVKit
 import UniformTypeIdentifiers
+import PDFKit
+import SceneKit
+import SceneKit.ModelIO
+import ModelIO
 
 enum Details {
     /// Readable facts about a file from Spotlight's metadata: dimensions, duration, camera, pages, source…
@@ -46,6 +50,9 @@ final class PreviewPane: NSView {
     private let preview = QLPreviewView(frame: .zero, style: .normal)!
     private let picture = NSImageView()
     private let player = AVPlayerView()
+    private let pdf = PDFView()
+    private let textScroll = NSTextView.scrollableTextView()
+    private let model = SCNView()
     private var pictureJob = 0
     private let info = NSStackView()
     private var sizeJob: Thread?
@@ -73,7 +80,7 @@ final class PreviewPane: NSView {
         picture.imageScaling = .scaleProportionallyDown
         picture.animates = true   // GIFs play
         // An image view wants to be as big as its image; here it should just fit whatever room the pane has.
-        for v in [picture, preview, player] as [NSView] {
+        for v in [picture, preview, player, pdf, textScroll, model] as [NSView] {
             for axis in [NSLayoutConstraint.Orientation.horizontal, .vertical] {
                 v.setContentCompressionResistancePriority(.init(1), for: axis)
                 v.setContentHuggingPriority(.init(1), for: axis)
@@ -81,7 +88,20 @@ final class PreviewPane: NSView {
         }
         player.controlsStyle = .inline
         player.showsFullScreenToggleButton = true
-        for v in [preview, picture, player] as [NSView] {
+        pdf.autoScales = true
+        pdf.displayMode = .singlePageContinuous
+        pdf.backgroundColor = .clear
+        if let text = textScroll.documentView as? NSTextView {
+            text.isEditable = false
+            text.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+            text.textContainerInset = NSSize(width: 6, height: 6)
+            text.backgroundColor = .textBackgroundColor
+        }
+        textScroll.hasVerticalScroller = true
+        model.allowsCameraControl = true            // drag to rotate, pinch/scroll to zoom
+        model.autoenablesDefaultLighting = true
+        model.backgroundColor = .clear
+        for v in [preview, picture, player, pdf, textScroll, model] as [NSView] {
             v.translatesAutoresizingMaskIntoConstraints = false
             stage.addSubview(v)
             NSLayoutConstraint.activate([v.topAnchor.constraint(equalTo: stage.topAnchor, constant: 8),
@@ -127,21 +147,105 @@ final class PreviewPane: NSView {
         if item.isFolder { measure(item.url) }
     }
 
-    private enum Viewer { case quickLook, picture, video }
+    private enum Viewer { case quickLook, picture, video, pdf, text, model }
+
+    private func viewer(for item: FileItem?) -> Viewer {
+        guard let item, !item.isFolder else { return .quickLook }
+        if FileItem.modelExtensions.contains(item.url.pathExtension.lowercased()) { return .model }
+        guard let type = item.typeID.flatMap(UTType.init) else { return .quickLook }
+        if type.conforms(to: .image) { return .picture }
+        if type.conforms(to: .audiovisualContent) { return .video }
+        if type.conforms(to: .pdf) { return .pdf }
+        if [.text, .sourceCode, .json, .xml, .propertyList].contains(where: { type.conforms(to: $0) }), !type.conforms(to: .rtf) { return .text }
+        return .quickLook
+    }
 
     private func display(_ item: FileItem?) {
         player.player?.pause()
-        let type = item?.typeID.flatMap(UTType.init)
-        let viewer: Viewer = type == nil ? .quickLook
-            : type!.conforms(to: .image) ? .picture
-            : type!.conforms(to: .audiovisualContent) ? .video : .quickLook
+        let viewer = viewer(for: item)
         preview.isHidden = viewer != .quickLook
         picture.isHidden = viewer != .picture
         player.isHidden = viewer != .video
+        pdf.isHidden = viewer != .pdf
+        textScroll.isHidden = viewer != .text
+        model.isHidden = viewer != .model
         preview.previewItem = viewer == .quickLook ? item?.url as NSURL? : nil
         player.player = viewer == .video ? item.map { AVPlayer(url: $0.url) } : nil
+        pdf.document = viewer == .pdf ? item.flatMap { PDFDocument(url: $0.url) } : nil
         picture.image = nil
-        if viewer == .picture, let url = item?.url { loadPicture(url) }
+        model.scene = nil
+        (textScroll.documentView as? NSTextView)?.string = ""
+        guard let url = item?.url else { return }
+        switch viewer {
+        case .picture: loadPicture(url)
+        case .text: loadText(url)
+        case .model: loadModel(url)
+        default: break
+        }
+    }
+
+    /// The first 200 KB of a text or code file, in whatever encoding it's in.
+    private func loadText(_ url: URL) {
+        pictureJob += 1
+        let job = pictureJob
+        DispatchQueue.global(qos: .userInitiated).async {
+            let limit = 200_000
+            let handle = try? FileHandle(forReadingFrom: url)
+            let data = (try? handle?.read(upToCount: limit)) ?? Data()
+            try? handle?.close()
+            var text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) ?? ""
+            let full = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            if full > limit { text += "\n\n… (the preview shows the first 200 KB)" }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard self.pictureJob == job else { return }
+                    (self.textScroll.documentView as? NSTextView)?.string = text
+                    self.textScroll.documentView?.scroll(.zero)
+                }
+            }
+        }
+    }
+
+    /// A 3D model you can turn and zoom. STL, OBJ and PLY go through Model I/O; USD, DAE, Alembic load directly.
+    private func loadModel(_ url: URL) {
+        pictureJob += 1
+        let job = pictureJob
+        DispatchQueue.global(qos: .userInitiated).async {
+            let ext = url.pathExtension.lowercased()
+            var scene: SCNScene?
+            if ["stl", "obj", "ply"].contains(ext) {
+                let asset = MDLAsset(url: url)
+                asset.loadTextures()
+                scene = SCNScene(mdlAsset: asset)
+            } else {
+                scene = try? SCNScene(url: url, options: [.convertToYUp: true])
+            }
+            // Untextured meshes (most STL files) get a neutral matte material so their shape reads well.
+            scene?.rootNode.enumerateHierarchy { node, _ in
+                guard let geometry = node.geometry else { return }
+                if geometry.materials.isEmpty || ["stl", "ply"].contains(ext) {
+                    let material = SCNMaterial()
+                    material.diffuse.contents = NSColor(calibratedWhite: 0.82, alpha: 1)
+                    material.lightingModel = .physicallyBased
+                    material.roughness.contents = 0.6
+                    geometry.materials = [material]
+                }
+            }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard self.pictureJob == job else { return }
+                    self.model.scene = scene
+                    self.model.pointOfView = nil   // let SceneKit frame the whole model
+                    if ProcessInfo.processInfo.environment["ELX_DEBUG"] != nil {
+                        var meshes = 0, vertices = 0
+                        scene?.rootNode.enumerateHierarchy { node, _ in
+                            if let g = node.geometry { meshes += 1; vertices += g.sources(for: .vertex).first?.vectorCount ?? 0 }
+                        }
+                        print("3D:", url.lastPathComponent, "meshes", meshes, "vertices", vertices)
+                    }
+                }
+            }
+        }
     }
 
     /// A screen-sized rendering made in the background, so a 100-megapixel RAW doesn't stall the window.

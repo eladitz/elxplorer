@@ -6,7 +6,8 @@ import Quartz
 
 @MainActor
 final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NSSearchFieldDelegate,
-                     NSMenuItemValidation, FileListHost, SidebarHost, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
+                     NSMenuItemValidation, FileListHost, SidebarHost, QLPreviewPanelDataSource, QLPreviewPanelDelegate,
+                     NSSplitViewDelegate {
     static private(set) var all: [Browser] = []
 
     private(set) var folder: URL?
@@ -133,25 +134,13 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
 
         split.isVertical = true
         split.dividerStyle = .thin
-        split.addArrangedSubview(sidebar.scroll)
-        split.addArrangedSubview(list.scroll)
-        split.addArrangedSubview(preview)
-        split.setHoldingPriority(.defaultHigh, forSubviewAt: 0)
-        split.setHoldingPriority(.defaultLow, forSubviewAt: 1)
-        split.setHoldingPriority(.defaultHigh - 1, forSubviewAt: 2)
-        let sidebarMin = sidebar.scroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 180)
-        sidebarMin.priority = .init(999)
-        sidebarMin.isActive = true
-        // The preview never takes more than 30% of the window and the list always keeps room to work.
-        // These are strong preferences, not hard rules: a hard rule could make AppKit grow the window to
-        // satisfy it, and the window only ever changes size when you resize it.
-        for c in [preview.widthAnchor.constraint(greaterThanOrEqualToConstant: 220),
-                  preview.widthAnchor.constraint(lessThanOrEqualTo: split.widthAnchor, multiplier: 0.3),
-                  list.scroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 300),
-                  sidebar.scroll.widthAnchor.constraint(lessThanOrEqualToConstant: 360)] {
-            c.priority = .init(999)
-            c.isActive = true
+        // Frame-based panes: Elxplorer works out the widths itself (see "Pane sizes"), so they're predictable
+        // and nothing inside them can ever resize the window.
+        for pane in [sidebar.scroll, list.scroll, preview] as [NSView] {
+            pane.translatesAutoresizingMaskIntoConstraints = true
+            split.addSubview(pane)
         }
+        split.delegate = self
         preview.isHidden = true   // shown by updatePreview() when wanted
 
         status.font = .systemFont(ofSize: 11)
@@ -183,7 +172,6 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
             status.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -4),
         ])
         window?.contentView = content
-        if split.subviews[0].frame.width < 190 { split.setPosition(220, ofDividerAt: 0) }
     }
 
     private func popup(_ options: [(String, String)], tag: Int) -> NSPopUpButton {
@@ -198,6 +186,68 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
         p.target = self
         p.action = #selector(filterChanged(_:))
         return p
+    }
+
+    // MARK: Pane sizes (sidebar | list | preview)
+
+    static let sidebarMin: CGFloat = 150, sidebarMax: CGFloat = 420
+    static let previewMin: CGFloat = 160, previewMaxShare: CGFloat = 0.6
+    static let listMin: CGFloat = 260
+
+    /// Lays the three panes out: the sidebar and preview keep their widths, the list gets the rest.
+    /// When space runs short, the preview gives way first, then the sidebar, down to their minimums.
+    func splitView(_ splitView: NSSplitView, resizeSubviewsWithOldSize oldSize: NSSize) {
+        layoutPanes()
+    }
+
+    private func layoutPanes() {
+        let total = split.bounds.width, height = split.bounds.height, gap = split.dividerThickness
+        let s = Settings.shared
+        var side = min(max(s.sidebarWidth, Self.sidebarMin), Self.sidebarMax)
+        var pane: CGFloat = 0
+        if !preview.isHidden {
+            pane = s.previewWidth > 0 ? s.previewWidth : total * 0.3
+            pane = min(max(pane, Self.previewMin), max(Self.previewMin, total * Self.previewMaxShare))
+        }
+        let gaps = gap * (preview.isHidden ? 1 : 2)
+        var listWidth = total - side - pane - gaps
+        if listWidth < Self.listMin, !preview.isHidden {
+            let give = min(Self.listMin - listWidth, pane - Self.previewMin)
+            pane -= give; listWidth += give
+        }
+        if listWidth < Self.listMin {
+            let give = min(Self.listMin - listWidth, side - Self.sidebarMin)
+            side -= give; listWidth += give
+        }
+        listWidth = max(0, listWidth)
+        sidebar.scroll.frame = NSRect(x: 0, y: 0, width: side, height: height)
+        list.scroll.frame = NSRect(x: side + gap, y: 0, width: listWidth, height: height)
+        preview.frame = NSRect(x: side + gap + listWidth + gap, y: 0, width: pane, height: height)
+        list.fitColumns()
+    }
+
+    /// Divider drag limits: sidebar 150–420, list at least 260, preview from 160 up to 60% of the window.
+    func splitView(_ splitView: NSSplitView, constrainMinCoordinate proposed: CGFloat, ofSubviewAt index: Int) -> CGFloat {
+        index == 0 ? Self.sidebarMin
+            : max(split.subviews[0].frame.maxX + split.dividerThickness + Self.listMin, split.bounds.width * (1 - Self.previewMaxShare))
+    }
+
+    func splitView(_ splitView: NSSplitView, constrainMaxCoordinate proposed: CGFloat, ofSubviewAt index: Int) -> CGFloat {
+        let total = split.bounds.width
+        return index == 0 ? min(Self.sidebarMax, total - Self.listMin - (preview.isHidden ? 0 : Self.previewMin))
+            : total - Self.previewMin
+    }
+
+    /// A thin divider is easy to miss; give it a few more points to grab.
+    func splitView(_ splitView: NSSplitView, effectiveRect proposed: NSRect, forDrawnRect drawn: NSRect, ofDividerAt index: Int) -> NSRect {
+        proposed.insetBy(dx: -4, dy: 0)
+    }
+
+    /// Remember the widths you drag the dividers to.
+    func splitViewDidResizeSubviews(_ notification: Notification) {
+        guard NSApp.currentEvent?.type == .leftMouseDragged, let index = notification.userInfo?["NSSplitViewDividerIndex"] as? Int else { return }
+        if index == 0 { Settings.shared.sidebarWidth = sidebar.scroll.frame.width }
+        if index == 1, !preview.isHidden { Settings.shared.previewWidth = preview.frame.width }
     }
 
     // MARK: Toolbar
@@ -393,14 +443,13 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
     private func updatePreview() {
         let s = Settings.shared
         let chosen = list.selectedItems
-        let wanted = s.showPreview || (s.autoPreviewMedia && chosen.count == 1 && chosen[0].isMedia)
+        let wanted = s.showPreview || (s.autoPreviewMedia && chosen.count == 1 && chosen[0].isPreviewable)
         if wanted && preview.isHidden {
             preview.isHidden = false
-            // Open at the 30% limit unless you've dragged it to a width you prefer.
-            let total = split.bounds.width
-            if preview.frame.width < 220 || preview.frame.width > total * 0.3 { split.setPosition(total - total * 0.3, ofDividerAt: 1) }
+            layoutPanes()
         } else if !wanted && !preview.isHidden {
             preview.isHidden = true
+            layoutPanes()
         }
         if wanted { preview.show(chosen) }
     }

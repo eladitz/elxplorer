@@ -167,7 +167,7 @@ final class FileList: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTe
         let available = scroll.contentView.bounds.width
         let spacing = table.intercellSpacing.width
         let others = table.tableColumns.filter { !$0.isHidden && $0 !== name }.reduce(0) { $0 + $1.width + spacing }
-        let target = min(name.maxWidth, max(160, available - others - spacing - 2))
+        let target = min(name.maxWidth, max(100, available - others - spacing - 2))
         if abs(name.width - target) > 0.5 { name.width = target }
     }
 
