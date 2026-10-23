@@ -197,14 +197,7 @@ final class Sidebar: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate {
         stack.alignment = .leading
         stack.spacing = 2
         if let subtitle = entry.subtitle {
-            // A capacity bar like Explorer's "This PC", red when nearly full.
-            let bar = NSLevelIndicator()
-            bar.levelIndicatorStyle = .continuousCapacity
-            bar.minValue = 0
-            bar.maxValue = 1
-            bar.warningValue = 0.85
-            bar.criticalValue = 0.95
-            bar.doubleValue = entry.usedFraction ?? 0
+            let bar = CapacityBar(used: entry.usedFraction ?? 0)
             bar.widthAnchor.constraint(equalToConstant: 120).isActive = true
             bar.heightAnchor.constraint(equalToConstant: 6).isActive = true
             bar.isHidden = entry.usedFraction == nil
@@ -285,4 +278,31 @@ extension Sidebar: NSMenuDelegate {
         guard let url = sender.representedObject as? URL else { return }
         do { try NSWorkspace.shared.unmountAndEjectDevice(at: url) } catch { NSAlert(error: error).runModal() }
     }
+}
+
+/// A drive's used space, drawn like Explorer's "This PC" bars: blue, red when over 90% full.
+/// Purely a picture (not a control), so it can't be dragged or clicked.
+final class CapacityBar: NSView {
+    private let used: Double
+
+    init(used: Double) {
+        self.used = min(max(used, 0), 1)
+        super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let track = NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2)
+        NSColor.quaternaryLabelColor.setFill()
+        track.fill()
+        let filled = NSRect(x: 0, y: 0, width: bounds.width * used, height: bounds.height)
+        NSGraphicsContext.saveGraphicsState()
+        track.addClip()
+        (used > 0.9 ? NSColor.systemRed : NSColor.systemBlue).setFill()
+        filled.fill()
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }   // clicks go to the sidebar row underneath
 }
