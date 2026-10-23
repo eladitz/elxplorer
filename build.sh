@@ -2,7 +2,7 @@
 # Builds Elxplorer.app (Apple Silicon + Intel) with the Command Line Tools; no Xcode needed.
 set -euo pipefail
 cd "$(dirname "$0")"
-VERSION=1.0.3
+VERSION=1.0.4
 APP=build/Elxplorer.app
 rm -rf "$APP" build/Elxplorer.iconset
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

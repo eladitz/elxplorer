@@ -146,13 +146,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let b = activeBrowser { b.window?.makeKeyAndOrderFront(nil); b.editAddress(nil) }
     }
 
-    /// Folders open in Elxplorer, and other apps' "Show in Finder" comes here too.
+    /// Other apps' "Show in Finder" comes here. macOS keeps plain "open this folder" with Finder: it refuses
+    /// (paramErr) to change the handler for public.folder, so there's no point asking for it.
     @objc func makeDefault(_ sender: Any?) {
-        LSSetDefaultRoleHandlerForContentType("public.folder" as CFString, .viewer, Self.bundleID as CFString)
         runDefaults(["write", "-g", "NSFileViewer", "-string", Self.bundleID])
         let alert = NSAlert()
         alert.messageText = "Elxplorer is now your default file browser"
-        alert.informativeText = "Folders you open, and “Show in Finder” in most apps, now come to Elxplorer. Apps that are already running pick this up after they restart. The desktop and the Trash stay with Finder. Undo it any time from the Elxplorer menu."
+        alert.informativeText = "“Show in Finder” in other apps (like Chrome's “Show in Finder” for a download) now opens Elxplorer. Apps that are already running pick this up after they restart. macOS doesn't let any app replace Finder for plainly opening a folder, so those, the desktop and the Trash stay with Finder. Undo it any time from the Elxplorer menu."
         alert.runModal()
     }
 
@@ -162,7 +162,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func checkForUpdates(_ sender: Any?) { Task { await Updater.check(manual: true) } }
 
     @objc func restoreFinder(_ sender: Any?) {
-        LSSetDefaultRoleHandlerForContentType("public.folder" as CFString, .viewer, "com.apple.finder" as CFString)
         runDefaults(["delete", "-g", "NSFileViewer"])
         let alert = NSAlert()
         alert.messageText = "Finder is the default again"

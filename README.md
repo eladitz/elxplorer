@@ -68,7 +68,7 @@ If [Elconvo](https://github.com/eladitz/elconvo) is installed, right-click files
 1. [Download Elxplorer.dmg](https://github.com/eladitz/elxplorer/releases/latest/download/Elxplorer.dmg), open it and drag **Elxplorer** into **Applications**.
 2. The app isn't signed with an Apple Developer ID yet, so the first time macOS will refuse to open it. Go to **System Settings ▸ Privacy & Security** and click **Open Anyway**. Once.
 3. When it offers **Full Disk Access**, click **Open Settings** and switch Elxplorer on (Touch ID), then Relaunch. That one switch replaces the separate prompts for Desktop, Documents, Downloads, iCloud Drive and every USB drive. Later: Elxplorer menu ▸ Grant Full Disk Access.
-4. Optional: **Elxplorer menu ▸ Make Elxplorer the Default File Browser**, so folders and most apps' "Show in Finder" open here. **Restore Finder as Default** undoes it. The desktop and the Trash stay with Finder; macOS doesn't let any app replace those.
+4. Optional: **Elxplorer menu ▸ Make Elxplorer the Default File Browser**, so most apps' "Show in Finder" (Chrome's included, after restarting it) opens here. **Restore Finder as Default** undoes it. macOS doesn't let any app replace Finder for plainly opening a folder (for example Chrome's "Open downloads folder"), the desktop or the Trash, so those stay with Finder.
 
 ## Build from source
 
