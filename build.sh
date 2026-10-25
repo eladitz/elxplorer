@@ -1,6 +1,13 @@
 #!/bin/zsh
 # Builds Elxplorer.app (Apple Silicon + Intel) with the Command Line Tools; no Xcode needed.
+#   ./build.sh               for downloads
+#   ./build.sh appstore      for the Mac App Store (sandboxed, no update check)
+#   ./build.sh sandbox-test  the App Store build signed ad hoc, to try the sandbox here
 set -euo pipefail
+MODE=${1:-direct}
+BUILD=${BUILD:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}   # must grow with every App Store upload
+FLAGS=()
+[[ $MODE != direct ]] && FLAGS=(-D APPSTORE)
 cd "$(dirname "$0")"
 VERSION=1.0.4
 APP=build/Elxplorer.app
@@ -8,7 +15,7 @@ rm -rf "$APP" build/Elxplorer.iconset
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 for arch in arm64 x86_64; do
-    swiftc -parse-as-library -swift-version 5 -O -target $arch-apple-macos14 Sources/*.swift -o build/Elxplorer-$arch
+    swiftc -parse-as-library -swift-version 5 -O -target $arch-apple-macos14 "${FLAGS[@]}" Sources/*.swift -o build/Elxplorer-$arch
 done
 lipo -create build/Elxplorer-arm64 build/Elxplorer-x86_64 -output "$APP/Contents/MacOS/Elxplorer"
 rm build/Elxplorer-arm64 build/Elxplorer-x86_64
@@ -29,7 +36,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleIconFile</key><string>Elxplorer</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
-    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleVersion</key><string>$BUILD</string>
+    <key>ITSAppUsesNonExemptEncryption</key><false/>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
     <key>NSHighResolutionCapable</key><true/>
@@ -54,14 +62,5 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Signed with the private certificate from ../make-signing-identity.sh when it's there, so macOS keeps its
-# permissions for the app across updates; otherwise ad hoc (which macOS treats as a new app every build).
-SIGNING="$HOME/Library/Application Support/Itzkin Signing"
-if [[ -f "$SIGNING/identity" ]]; then
-    KEYCHAIN=$(ls "$SIGNING"/signing.keychain* | head -1)
-    security unlock-keychain -p "$(cat "$SIGNING/password")" "$KEYCHAIN"
-    codesign --force --keychain "$KEYCHAIN" --sign "$(cat "$SIGNING/identity")" "$APP"
-else
-    codesign --force --sign - "$APP"
-fi
-echo "Built $APP"
+./sign.sh "$APP" "$MODE"
+echo "Built $APP ($MODE)"

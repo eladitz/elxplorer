@@ -2,6 +2,15 @@
 
 import AppKit
 
+/// Built for the Mac App Store (`./build.sh appstore`): sandboxed, and the Store does the updating.
+enum Distribution {
+    #if APPSTORE
+    static let appStore = true
+    #else
+    static let appStore = false
+    #endif
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static let bundleID = "com.itzkin.elxplorer"
@@ -52,14 +61,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         Donation.usageLine = { "You've used it on \($0) different days so far." }
         Donation.start()
-        Updater.start()
+        #if APPSTORE
+        DiskAccess.restore()
+        if DiskAccess.needed { DiskAccess.ask(first: true) }
+        #else
+        Updater.start()   // the App Store does the updating there
+        #endif
         guard !launchedWithFiles else { return }
         // Bring back the tabs from last time; otherwise start at home.
         let session = Settings.shared.lastSession.filter { FileManager.default.fileExists(atPath: $0.path) }
         let first = newWindow(session.first ?? FileManager.default.homeDirectoryForCurrentUser)
         for url in session.dropFirst() { openTab(url, beside: first, focus: false) }
         first.window?.makeKeyAndOrderFront(nil)
-        FullDiskAccess.offerIfNeeded()
+        if !Distribution.appStore { FullDiskAccess.offerIfNeeded() }
     }
 
     // A "use" is a day Elxplorer was in front.
@@ -156,8 +170,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.runModal()
     }
 
+    /// A menu entry that isn't there in this build (nil already means a separator in `menu`).
+    static let leftOut = -99
+    static var omitted: NSMenuItem { let i = NSMenuItem(); i.tag = leftOut; return i }
+
     @objc func website(_ sender: Any?) { NSWorkspace.shared.open(URL(string: "https://ai.itzkin.com/elxplorer.html")!) }
-    @objc func grantAccess(_ sender: Any?) { FullDiskAccess.ask(fromMenu: true) }
+    @objc func grantAccess(_ sender: Any?) {
+        if Distribution.appStore { DiskAccess.ask(URL(fileURLWithPath: "/Volumes")) } else { FullDiskAccess.ask(fromMenu: true) }
+    }
     @objc func donate(_ sender: Any?) { NSWorkspace.shared.open(Donation.page) }
     @objc func checkForUpdates(_ sender: Any?) { Task { await Updater.check(manual: true) } }
 
@@ -182,7 +202,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let main = NSMenu()
         func menu(_ title: String, _ items: [NSMenuItem?]) -> NSMenu {
             let m = NSMenu(title: title)
-            for item in items { m.addItem(item ?? .separator()) }
+            for item in items where item?.tag != Self.leftOut { m.addItem(item ?? .separator()) }
             let holder = NSMenuItem()
             holder.submenu = m
             main.addItem(holder)
@@ -203,13 +223,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = menu("Elxplorer", [
             item("About Elxplorer", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), ""),
             nil,
-            item("Make Elxplorer the Default File Browser", #selector(makeDefault(_:)), target: self),
-            item("Restore Finder as Default", #selector(restoreFinder(_:)), target: self),
-            nil,
+            // Sandboxed apps can't change which app reveals files, nor check GitHub for updates.
+            Distribution.appStore ? Self.omitted : item("Make Elxplorer the Default File Browser", #selector(makeDefault(_:)), target: self),
+            Distribution.appStore ? Self.omitted : item("Restore Finder as Default", #selector(restoreFinder(_:)), target: self),
+            Distribution.appStore ? Self.omitted : NSMenuItem.separator(),
             item("Elxplorer Website", #selector(website(_:)), target: self),
-            item("Check for Updates…", #selector(checkForUpdates(_:)), target: self),
+            Distribution.appStore ? Self.omitted : item("Check for Updates…", #selector(checkForUpdates(_:)), target: self),
             item("Support Elxplorer on Ko-fi…", #selector(donate(_:)), target: self),
-            item("Grant Full Disk Access…", #selector(grantAccess(_:)), target: self),
+            item(Distribution.appStore ? "Allow Access to Another Drive…" : "Grant Full Disk Access…", #selector(grantAccess(_:)), target: self),
             nil,
             item("Hide Elxplorer", #selector(NSApplication.hide(_:)), "h"),
             item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),

@@ -12,7 +12,9 @@ struct ElconvoAction {
 enum Elconvo {
     static let bundleID = "com.itzkin.elconvo"
     static var appURL: URL? { NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) }
-    static var isInstalled: Bool { appURL != nil }
+    /// Sandboxed, Elxplorer can't run Elconvo's helper or send it details over a notification; the App Store
+    /// builds will talk through a folder the two share instead. Until then the Store build leaves Elconvo out.
+    static var isInstalled: Bool { !Distribution.appStore && appURL != nil }
 
     /// Answers are the same for the same kinds of file, so they're kept per extension mix (and single vs several).
     private static var cache: [String: (convert: [ElconvoAction], tools: [ElconvoAction])] = [:]

@@ -657,6 +657,9 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
     @objc func showInFinder(_ sender: Any?) {
         let targets = selection.isEmpty ? [folder].compactMap { $0 } : selection
         let list = targets.map { "POSIX file \"\($0.path.replacingOccurrences(of: "\"", with: "\\\""))\"" }.joined(separator: ", ")
+        // Sandboxed, Elxplorer can't script Finder; it can't be the default browser there either, so asking
+        // macOS to reveal the files lands in Finder anyway.
+        if Distribution.appStore { return NSWorkspace.shared.activateFileViewerSelecting(targets) }
         NSAppleScript(source: "tell application \"Finder\"\nreveal {\(list)}\nactivate\nend tell")?.executeAndReturnError(nil)
     }
 
