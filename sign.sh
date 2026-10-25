@@ -38,6 +38,9 @@ appstore)
     ID=$(identity "Apple Distribution"); [[ -n $ID ]] || ID=$(identity "3rd Party Mac Developer Application")
     [[ -n $ID ]] || { echo "No Apple Distribution certificate in the keychain"; exit 1 }
     cp "$PROFILE" "$APP/Contents/embedded.provisionprofile"
+    # Files carry extended attributes (like "downloaded from the internet" on the profile); the App Store
+    # refuses packages that contain any, so strip them all before signing.
+    xattr -cr "$APP"
     helpers --options runtime --entitlements "$INHERIT" --sign "$ID"
     # The profile's app and team identifiers, plus the sandbox entitlements.
     WORK=$(mktemp -d)

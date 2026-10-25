@@ -8,7 +8,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 MODE=${1:-direct}
 APP=build/Elxplorer.app
-identity() { security find-identity -v $1 | grep -o "\"$2[^\"]*\"" | head -1 | tr -d '"' || true }
+identity() { security find-identity -v ${=1} | grep -o "\"$2[^\"]*\"" | head -1 | tr -d '"' || true }   # $1: options, split into words
 
 if [[ $MODE == appstore ]]; then
     ./build.sh appstore
