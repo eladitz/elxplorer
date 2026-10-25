@@ -664,6 +664,14 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
         if let id = sender.representedObject as? String { Elconvo.convert(selection, to: id) }
     }
 
+    /// Elingo: fill in and sign PDFs beside a live translation. All the chosen PDFs go over in one go.
+    static var elingo: URL? { NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.itzkin.elingo") }
+
+    @objc func translateWithElingo(_ sender: Any?) {
+        guard let app = Self.elingo else { return }
+        NSWorkspace.shared.open(selection, withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+    }
+
     @objc func elconvoTool(_ sender: NSMenuItem) {
         if let id = sender.representedObject as? String { Elconvo.tool(selection, id) }
     }
@@ -838,6 +846,9 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
             }
             elconvoMenu("Convert with Elconvo", formats, #selector(elconvoConvert(_:)))
             elconvoMenu("Elconvo Tools", tools, #selector(elconvoTool(_:)))
+        }
+        if Self.elingo != nil, !chosen.isEmpty, chosen.allSatisfy({ $0.url.pathExtension.lowercased() == "pdf" }) {
+            _ = add("Translate with Elingo", #selector(translateWithElingo(_:)))
         }
         if chosen.count == 1, chosen[0].isFolder {
             _ = add("Pin to Quick access", #selector(pinFolder(_:)))

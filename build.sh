@@ -54,5 +54,14 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-codesign --force --sign - "$APP"
+# Signed with the private certificate from ../make-signing-identity.sh when it's there, so macOS keeps its
+# permissions for the app across updates; otherwise ad hoc (which macOS treats as a new app every build).
+SIGNING="$HOME/Library/Application Support/Itzkin Signing"
+if [[ -f "$SIGNING/identity" ]]; then
+    KEYCHAIN=$(ls "$SIGNING"/signing.keychain* | head -1)
+    security unlock-keychain -p "$(cat "$SIGNING/password")" "$KEYCHAIN"
+    codesign --force --keychain "$KEYCHAIN" --sign "$(cat "$SIGNING/identity")" "$APP"
+else
+    codesign --force --sign - "$APP"
+fi
 echo "Built $APP"
