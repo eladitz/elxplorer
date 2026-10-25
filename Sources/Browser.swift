@@ -108,7 +108,7 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
 
     // The "+" in the tab bar.
     @objc override func newWindowForTab(_ sender: Any?) {
-        (NSApp.delegate as? AppDelegate)?.openTab(FileManager.default.homeDirectoryForCurrentUser, beside: self)
+        (NSApp.delegate as? AppDelegate)?.openTab(Home.url, beside: self)
     }
 
     private func buildContent() {
@@ -346,7 +346,7 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
         let url = target.standardizedFileURL.resolvingSymlinksInPath()
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else {
-            showError("“\((target.path as NSString).abbreviatingWithTildeInPath)” doesn't exist.")
+            showError("“\(Home.abbreviate(target.path))” doesn't exist.")
             return
         }
         // A file: show it in its folder, selected (what "reveal" means everywhere else).
@@ -376,8 +376,8 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
     func go(toTyped text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
-        let path = (trimmed as NSString).expandingTildeInPath
-        let url = path.hasPrefix("/") ? URL(fileURLWithPath: path) : (folder ?? FileManager.default.homeDirectoryForCurrentUser).appendingPathComponent(path)
+        let path = Home.expand(trimmed)
+        let url = path.hasPrefix("/") ? URL(fileURLWithPath: path) : (folder ?? Home.url).appendingPathComponent(path)
         navigate(to: url)
     }
 
@@ -496,10 +496,10 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
         reload()
     }
     @objc func editAddress(_ sender: Any?) { address.edit() }
-    @objc func goHome(_ sender: Any?) { navigate(to: FileManager.default.homeDirectoryForCurrentUser) }
-    @objc func goDesktop(_ sender: Any?) { navigate(to: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")) }
-    @objc func goDownloads(_ sender: Any?) { navigate(to: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")) }
-    @objc func goDocuments(_ sender: Any?) { navigate(to: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents")) }
+    @objc func goHome(_ sender: Any?) { navigate(to: Home.url) }
+    @objc func goDesktop(_ sender: Any?) { navigate(to: Home.url.appendingPathComponent("Desktop")) }
+    @objc func goDownloads(_ sender: Any?) { navigate(to: Home.url.appendingPathComponent("Downloads")) }
+    @objc func goDocuments(_ sender: Any?) { navigate(to: Home.url.appendingPathComponent("Documents")) }
     @objc func goApplications(_ sender: Any?) { navigate(to: URL(fileURLWithPath: "/Applications")) }
 
     // MARK: FileListHost

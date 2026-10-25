@@ -55,7 +55,7 @@ final class AddressBar: NSView, NSTextFieldDelegate {
     }
 
     func edit() {
-        field.stringValue = url.map { ($0.path as NSString).abbreviatingWithTildeInPath } ?? ""
+        field.stringValue = url.map { Home.abbreviate($0.path) } ?? ""
         crumbs.isHidden = true
         field.isHidden = false
         window?.makeFirstResponder(field)
@@ -90,7 +90,7 @@ final class AddressBar: NSView, NSTextFieldDelegate {
 
     /// Tab completes the last part of the path, like a terminal (and cycles nothing: it fills the common prefix).
     private func complete(_ textView: NSTextView) {
-        let typed = (field.stringValue as NSString).expandingTildeInPath
+        let typed = Home.expand(field.stringValue)
         let parent = typed.hasSuffix("/") ? typed : (typed as NSString).deletingLastPathComponent
         let partial = typed.hasSuffix("/") ? "" : (typed as NSString).lastPathComponent
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: parent) else { return }
@@ -101,7 +101,7 @@ final class AddressBar: NSView, NSTextFieldDelegate {
         for m in matches.dropFirst() { while !m.lowercased().hasPrefix(common.lowercased()) { common.removeLast() } }
         var full = (parent as NSString).appendingPathComponent(matches.count == 1 ? first : common)
         if matches.count == 1 { full += "/" }
-        field.stringValue = (full as NSString).abbreviatingWithTildeInPath
+        field.stringValue = Home.abbreviate(full)
         textView.moveToEndOfDocument(nil)
     }
 }

@@ -91,7 +91,7 @@ final class Sidebar: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate {
 
     func reload() {
         let fm = FileManager.default
-        let home = fm.homeDirectoryForCurrentUser
+        let home = Home.url
         func folder(_ title: String, _ url: URL, _ symbol: String) -> SidebarEntry {
             SidebarEntry(title, icon: NSImage(systemSymbolName: symbol, accessibilityDescription: nil), url: url, kind: .folder)
         }

@@ -151,7 +151,7 @@ final class PreviewPane: NSView {
         shown = item.url
         display(item)
         var rows: [(String, String)] = [("Type", item.kind),
-                                         ("Location", (item.url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath)]
+                                         ("Location", Home.abbreviate(item.url.deletingLastPathComponent().path))]
         if let s = item.size { rows.append(("Size", Format.size(s))) }
         if let m = item.modified { rows.append(("Modified", Format.date.string(from: m))) }
         if let c = item.created { rows.append(("Created", Format.date.string(from: c))) }

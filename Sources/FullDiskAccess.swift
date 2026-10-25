@@ -11,7 +11,7 @@ enum FullDiskAccess {
     /// These places can only be read with Full Disk Access, and trying never shows a prompt (it just says
     /// "not permitted"). Several, because macOS versions move them around.
     static var isGranted: Bool {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let home = Home.url.path
         let fd = open("/Library/Application Support/com.apple.TCC/TCC.db", O_RDONLY)
         if fd >= 0 { close(fd); return true }
         for folder in ["\(home)/Library/Safari", "\(home)/Library/Mail", "\(home)/Library/Containers/com.apple.stocks"] {

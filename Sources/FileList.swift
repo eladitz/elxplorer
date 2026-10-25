@@ -292,7 +292,7 @@ final class FileList: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTe
                     text = Format.size(item.size)
                 }
             case "tags": text = item.tags.joined(separator: ", ")
-            case "folder": text = (item.url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
+            case "folder": text = Home.abbreviate(item.url.deletingLastPathComponent().path)
             default: text = ""
             }
             cell.textField?.stringValue = text

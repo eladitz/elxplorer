@@ -35,7 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
-            let folder = i + 2 < args.count ? URL(fileURLWithPath: args[i + 2]) : FileManager.default.homeDirectoryForCurrentUser
+            let folder = i + 2 < args.count ? URL(fileURLWithPath: args[i + 2]) : Home.url
             let browser = newWindow(folder)
             if i + 3 < args.count { browser.searchField.stringValue = args[i + 3]; browser.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: browser.searchField)) }
             // ELX_SELECT="a.jpg,b.jpg": select these (in this order) before drawing.
@@ -70,7 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !launchedWithFiles else { return }
         // Bring back the tabs from last time; otherwise start at home.
         let session = Settings.shared.lastSession.filter { FileManager.default.fileExists(atPath: $0.path) }
-        let first = newWindow(session.first ?? FileManager.default.homeDirectoryForCurrentUser)
+        let first = newWindow(session.first ?? Home.url)
         for url in session.dropFirst() { openTab(url, beside: first, focus: false) }
         first.window?.makeKeyAndOrderFront(nil)
         if !Distribution.appStore { FullDiskAccess.offerIfNeeded() }
@@ -96,7 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        if !hasVisibleWindows { newWindow(FileManager.default.homeDirectoryForCurrentUser).window?.makeKeyAndOrderFront(nil) }
+        if !hasVisibleWindows { newWindow(Home.url).window?.makeKeyAndOrderFront(nil) }
         return true
     }
 
@@ -148,11 +148,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Menu actions handled at app level
 
     @objc func newWindowAction(_ sender: Any?) {
-        newWindow(activeBrowser?.folder ?? FileManager.default.homeDirectoryForCurrentUser)
+        newWindow(activeBrowser?.folder ?? Home.url)
     }
 
     @objc func newTabAction(_ sender: Any?) {
-        let url = activeBrowser?.folder ?? FileManager.default.homeDirectoryForCurrentUser
+        let url = activeBrowser?.folder ?? Home.url
         if let current = activeBrowser { openTab(url, beside: current) } else { newWindow(url) }
     }
 
