@@ -9,7 +9,7 @@ BUILD=${BUILD:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}   # must grow
 FLAGS=()
 [[ $MODE != direct ]] && FLAGS=(-D APPSTORE)
 cd "$(dirname "$0")"
-VERSION=1.0.4
+VERSION=1.0.5
 APP=build/Elxplorer.app
 rm -rf "$APP" build/Elxplorer.iconset
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

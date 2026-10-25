@@ -653,6 +653,16 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
         else if let folder { Properties.show(FileItem(url: folder)) }
     }
 
+    /// Like Explorer's: the folder each chosen item is in, in a new window, with the items selected. Most useful
+    /// in search results, which mix many folders. One window per folder, at most five.
+    @objc func openFileLocation(_ sender: Any?) {
+        let folders = Dictionary(grouping: selection, by: { $0.deletingLastPathComponent().standardizedFileURL })
+        for (folder, items) in folders.prefix(5) {
+            guard let browser = (NSApp.delegate as? AppDelegate)?.newWindow(folder) else { continue }
+            browser.navigate(to: folder, record: false, select: Set(items))
+        }
+    }
+
     /// The escape hatch: the same files in Finder (asked for by name, so it works even when Elxplorer is the default).
     @objc func showInFinder(_ sender: Any?) {
         let targets = selection.isEmpty ? [folder].compactMap { $0 } : selection
@@ -857,6 +867,7 @@ final class Browser: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NS
             _ = add("Pin to Quick access", #selector(pinFolder(_:)))
             _ = add("Open in Terminal", #selector(openTerminal(_:)))
         }
+        _ = add("Open File Location", #selector(openFileLocation(_:)))
         _ = add("Show in Finder", #selector(showInFinder(_:)))
         menu.addItem(.separator())
         _ = add("Properties", #selector(showProperties(_:)), key: "i")
