@@ -6,6 +6,8 @@
 #                 ~/Library/Application Support/Itzkin Signing/profiles/<App>.provisionprofile (or $PROFILE).
 #   sandbox-test  the App Store's sandbox rules, signed ad hoc, to try the sandbox on this Mac.
 # Entitlements: AppStore.entitlements (sandbox), and Direct.entitlements (hardened-runtime extras) if present.
+# Programs in Contents/Helpers (Elconvo's ffmpeg and cwebp) are signed first; in the App Store build they
+# inherit the app's sandbox, as Apple requires of helper tools.
 set -euo pipefail
 APP=$1
 MODE=${2:-direct}
@@ -15,6 +17,20 @@ SIGNING="$HOME/Library/Application Support/Itzkin Signing"
 
 identity() { security find-identity -v -p codesigning | grep -o "\"$1[^\"]*\"" | head -1 | tr -d '"' || true }
 
+helpers() {   # codesign arguments for each helper
+    [[ -d "$APP/Contents/Helpers" ]] || return 0
+    for tool in "$APP"/Contents/Helpers/*(N); do codesign --force "$@" "$tool"; done
+}
+INHERIT=$(mktemp)
+cat > "$INHERIT" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>com.apple.security.app-sandbox</key><true/>
+    <key>com.apple.security.inherit</key><true/>
+</dict></plist>
+PLIST
+
 case $MODE in
 appstore)
     PROFILE=${PROFILE:-"$SIGNING/profiles/$NAME.provisionprofile"}
@@ -22,6 +38,7 @@ appstore)
     ID=$(identity "Apple Distribution"); [[ -n $ID ]] || ID=$(identity "3rd Party Mac Developer Application")
     [[ -n $ID ]] || { echo "No Apple Distribution certificate in the keychain"; exit 1 }
     cp "$PROFILE" "$APP/Contents/embedded.provisionprofile"
+    helpers --options runtime --entitlements "$INHERIT" --sign "$ID"
     # The profile's app and team identifiers, plus the sandbox entitlements.
     WORK=$(mktemp -d)
     security cms -D -i "$PROFILE" > "$WORK/profile.plist"
@@ -31,6 +48,7 @@ appstore)
     rm -rf "$WORK"
     ;;
 sandbox-test)
+    helpers --entitlements "$INHERIT" --sign -
     codesign --force --entitlements "$HERE/AppStore.entitlements" --sign - "$APP"
     ;;
 *)
@@ -38,13 +56,17 @@ sandbox-test)
     [[ -f "$HERE/Direct.entitlements" ]] && EXTRA=(--entitlements "$HERE/Direct.entitlements")
     ID=$(identity "Developer ID Application")
     if [[ -n $ID ]]; then
+        helpers --options runtime --timestamp --sign "$ID"
         codesign --force --options runtime --timestamp "${EXTRA[@]}" --sign "$ID" "$APP"
     elif [[ -f "$SIGNING/identity" ]]; then
         KEYCHAIN=$(ls "$SIGNING"/signing.keychain* | head -1)
         security unlock-keychain -p "$(cat "$SIGNING/password")" "$KEYCHAIN"
+        helpers --keychain "$KEYCHAIN" --sign "$(cat "$SIGNING/identity")"
         codesign --force --keychain "$KEYCHAIN" "${EXTRA[@]}" --sign "$(cat "$SIGNING/identity")" "$APP"
     else
+        helpers --sign -
         codesign --force --sign - "$APP"
     fi
     ;;
 esac
+rm -f "$INHERIT"
