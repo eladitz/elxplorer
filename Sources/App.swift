@@ -19,6 +19,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = true
         buildMenus()
+        if let i = CommandLine.arguments.firstIndex(of: "--tour"), i + 1 < CommandLine.arguments.count {
+            Tour.run(URL(fileURLWithPath: CommandLine.arguments[i + 1]))
+            return
+        }
         // Development aid: `--snapshot out.png [folder] [search text]` draws one window to an image and quits;
         // `--snapshot-drive out.png /Volumes/X` does the same for a drive's More Info window.
         let args = CommandLine.arguments
@@ -80,6 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidBecomeActive(_ notification: Notification) { Donation.recordDay() }
 
     func applicationWillTerminate(_ notification: Notification) {
+        guard !Tour.active else { return }   // a tour leaves your saved tabs alone
         // Tabs in on-screen order, so they come back the same way.
         let windows = NSApp.orderedWindows.compactMap { $0.windowController as? Browser }
         var seen = Set<ObjectIdentifier>()
