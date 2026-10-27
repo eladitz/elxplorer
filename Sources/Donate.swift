@@ -25,7 +25,11 @@ enum Donation {
     /// What the first prompt says about how much it's been used.
     static var usageLine: (Int) -> String = { "You've converted \($0) files with it so far." }
 
+    /// The Mac App Store only allows tips through In-App Purchase, so its builds have no Ko-fi prompt or link.
+    static var enabled: Bool { !Distribution.appStore }
+
     static func start() {
+        guard enabled else { return }
         if defaults.object(forKey: nextAskKey) == nil { snooze(month) }
         // These apps run for weeks without relaunching, so look again a few times a day.
         let timer = Timer(timeInterval: 4 * 3600, repeats: true) { _ in MainActor.assumeIsolated { askIfDue() } }

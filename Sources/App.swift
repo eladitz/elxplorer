@@ -234,7 +234,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Distribution.appStore ? Self.omitted : NSMenuItem.separator(),
             item("Elxplorer Website", #selector(website(_:)), target: self),
             Distribution.appStore ? Self.omitted : item("Check for Updates…", #selector(checkForUpdates(_:)), target: self),
-            item("Support Elxplorer on Ko-fi…", #selector(donate(_:)), target: self),
+            Donation.enabled ? item("Support Elxplorer on Ko-fi…", #selector(donate(_:)), target: self) : Self.omitted,
             item(Distribution.appStore ? "Allow Access to Another Drive…" : "Grant Full Disk Access…", #selector(grantAccess(_:)), target: self),
             nil,
             item("Hide Elxplorer", #selector(NSApplication.hide(_:)), "h"),
